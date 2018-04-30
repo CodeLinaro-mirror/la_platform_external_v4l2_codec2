@@ -28,7 +28,7 @@ std::unique_ptr<T> alloc_unique_cstr(const char* cstr) {
     return ptr;
 }
 
-const C2String testCompName = "c2.v4l2.h264.decoder";
+const C2String testCompName = "c2.vda.avc.decoder";
 const c2_node_id_t testCompNodeId = 12345;
 
 const char* MEDIA_MIMETYPE_VIDEO_RAW = "video/raw";
@@ -405,7 +405,7 @@ void dumpType(const C2FieldDescriptor::type_t type) {
 void dumpStruct(const C2StructDescriptor& sd) {
     printf("  struct: { ");
     for (const C2FieldDescriptor& f : sd) {
-        printf("%s:", f.name());
+        printf("%s:", f.name().c_str());
         dumpType(f.type());
         printf(", ");
     }
