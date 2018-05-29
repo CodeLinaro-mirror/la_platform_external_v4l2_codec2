@@ -7,18 +7,12 @@
 
 #include <C2VDAComponent.h>
 
-#ifdef ANDROID_VERSION_NYC
-// Get allocators from NYC-specific implementation
-#include <C2VDASupport.h>
-#else
-// Get allocators from framework
-#include <C2PlatformSupport.h>
-#endif
-
 #include <C2Buffer.h>
 #include <C2BufferPriv.h>
 #include <C2Component.h>
+#include <C2PlatformSupport.h>
 #include <C2Work.h>
+#include <SimpleInterfaceCommon.h>
 
 #include <base/files/file.h>
 #include <base/files/file_path.h>
@@ -27,9 +21,14 @@
 #include <base/strings/string_split.h>
 
 #include <gtest/gtest.h>
+#include <media/DataSource.h>
 #include <media/IMediaHTTPService.h>
+#include <media/MediaExtractor.h>
+#include <media/MediaSource.h>
+#include <media/stagefright/DataSourceFactory.h>
 #include <media/stagefright/MediaDefs.h>
 #include <media/stagefright/MediaErrors.h>
+#include <media/stagefright/MediaExtractorFactory.h>
 #include <media/stagefright/MetaData.h>
 #include <media/stagefright/Utils.h>
 #include <media/stagefright/foundation/ABuffer.h>
@@ -37,17 +36,6 @@
 #include <media/stagefright/foundation/AMessage.h>
 #include <media/stagefright/foundation/AUtils.h>
 #include <utils/Log.h>
-#ifdef ANDROID_VERSION_NYC
-#include <media/stagefright/DataSource.h>
-#include <media/stagefright/MediaExtractor.h>
-#include <media/stagefright/MediaSource.h>
-#else
-#include <media/DataSource.h>
-#include <media/MediaExtractor.h>
-#include <media/MediaSource.h>
-#include <media/stagefright/DataSourceFactory.h>
-#include <media/stagefright/MediaExtractorFactory.h>
-#endif
 
 #include <fcntl.h>
 #include <inttypes.h>
@@ -111,9 +99,9 @@ namespace android {
 // - |width| and |height| are for video size (in pixels).
 // - |numFrames| is the number of picture frames.
 // - |numFragments| is the NALU (h264) or frame (VP8/9) count by MediaExtractor.
-const char* gTestVideoData = "bear.mp4:c2.vda.avc.decoder:640:368:82:84";
-//const char* gTestVideoData = "bear-vp8.webm:c2.vda.vp8.decoder:640:368:82:82";
-//const char* gTestVideoData = "bear-vp9.webm:c2.vda.vp9.decoder:320:256:82:82";
+const char* gTestVideoData = "bear.mp4:c2.vda.avc.decoder:640:360:82:84";
+//const char* gTestVideoData = "bear-vp8.webm:c2.vda.vp8.decoder:640:360:82:82";
+//const char* gTestVideoData = "bear-vp9.webm:c2.vda.vp9.decoder:320:240:82:82";
 
 // Record decoded output frames as raw YUV format.
 // The recorded file will be named as "<video_name>_output_<width>x<height>.yuv" under the same
@@ -234,11 +222,7 @@ private:
 };
 
 C2VDAComponentTest::C2VDAComponentTest() : mListener(new Listener(this)) {
-#ifdef ANDROID_VERSION_NYC
-    std::shared_ptr<C2AllocatorStore> store = GetCodec2VDAAllocatorStore();
-#else
     std::shared_ptr<C2AllocatorStore> store = GetCodec2PlatformAllocatorStore();
-#endif
     CHECK_EQ(store->fetchAllocator(C2AllocatorStore::DEFAULT_LINEAR, &mLinearAlloc), C2_OK);
 
     mLinearBlockPool = std::make_shared<C2BasicLinearBlockPool>(mLinearAlloc);
@@ -282,24 +266,15 @@ static bool getMediaSourceFromFile(const std::string& filename,
                                    const TestVideoFile::CodecType codec, sp<IMediaSource>* source) {
     source->clear();
 
-#ifdef ANDROID_VERSION_NYC
-    sp<DataSource> dataSource =
-            DataSource::CreateFromURI(nullptr /* httpService */, filename.c_str());
-#else
     sp<DataSource> dataSource =
             DataSourceFactory::CreateFromURI(nullptr /* httpService */, filename.c_str());
-#endif
 
     if (dataSource == nullptr) {
         fprintf(stderr, "Unable to create data source.\n");
         return false;
     }
 
-#ifdef ANDROID_VERSION_NYC
-    sp<IMediaExtractor> extractor = MediaExtractor::Create(dataSource);
-#else
     sp<IMediaExtractor> extractor = MediaExtractorFactory::Create(dataSource);
-#endif
     if (extractor == nullptr) {
         fprintf(stderr, "could not create extractor.\n");
         return false;
@@ -458,8 +433,9 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
         expectedFinishedWorkCounts[0] = mFlushAfterWorkIndex + 1;
     }
 
-    std::shared_ptr<C2Component> component(
-            std::make_shared<C2VDAComponent>(mTestVideoFile->mComponentName, 0));
+    std::shared_ptr<C2Component> component(std::make_shared<C2VDAComponent>(
+            mTestVideoFile->mComponentName, 0, std::make_shared<C2ReflectorHelper>()));
+
     ASSERT_EQ(component->setListener_vb(mListener, C2_DONT_BLOCK), C2_OK);
     std::unique_ptr<C2PortBlockPoolsTuning::output> pools =
             C2PortBlockPoolsTuning::output::AllocUnique(
@@ -506,8 +482,21 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             if (work->worklets.front()->output.buffers.size() == 1u) {
                 std::shared_ptr<C2Buffer> output = work->worklets.front()->output.buffers[0];
                 C2ConstGraphicBlock graphicBlock = output->data().graphicBlocks().front();
-                ASSERT_EQ(mTestVideoFile->mWidth, static_cast<int>(graphicBlock.width()));
-                ASSERT_EQ(mTestVideoFile->mHeight, static_cast<int>(graphicBlock.height()));
+
+                // check graphic buffer size (coded size) is not less than given video size.
+                ASSERT_LE(mTestVideoFile->mWidth, static_cast<int>(graphicBlock.width()));
+                ASSERT_LE(mTestVideoFile->mHeight, static_cast<int>(graphicBlock.height()));
+
+                // check visible rect equals to given video size.
+                ASSERT_EQ(mTestVideoFile->mWidth, static_cast<int>(graphicBlock.crop().width));
+                ASSERT_EQ(mTestVideoFile->mHeight, static_cast<int>(graphicBlock.crop().height));
+                ASSERT_EQ(0u, graphicBlock.crop().left);
+                ASSERT_EQ(0u, graphicBlock.crop().top);
+
+                // Intended behavior for Intel libva driver (crbug.com/148546):
+                // The 5ms latency is laid here to make sure surface content is finished processed
+                // processed by libva.
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
                 const C2GraphicView& constGraphicView = graphicBlock.map().get();
                 ASSERT_EQ(C2_OK, constGraphicView.error());
@@ -534,8 +523,9 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             bool iteration_end =
                     work->worklets.front()->output.flags & C2FrameData::FLAG_END_OF_STREAM;
 
-            // input buffers should be cleared in component side.
-            ASSERT_TRUE(work->input.buffers.empty());
+            // input buffer should be reset in component side.
+            ASSERT_EQ(work->input.buffers.size(), 1u);
+            ASSERT_TRUE(work->input.buffers.front() == nullptr);
             work->worklets.clear();
             work->workletsProcessed = 0;
 
@@ -588,11 +578,7 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
             size_t size = 0u;
             void* data = nullptr;
             int64_t timestamp = 0u;
-#ifdef ANDROID_VERSION_NYC
-            MediaBuffer* buffer = nullptr;
-#else
             MediaBufferBase* buffer = nullptr;
-#endif
             sp<ABuffer> csd;
             bool queueDummyEOSWork = false;
             if (!csds.empty()) {
@@ -615,13 +601,8 @@ TEST_P(C2VDAComponentParamTest, SimpleDecodeTest) {
                     // TODO(johnylin): add test with drain with DRAIN_COMPONENT_NO_EOS when we know
                     //                 the actual use case of it.
                 } else {
-#ifdef ANDROID_VERSION_NYC
-                    sp<MetaData> meta = buffer->meta_data();
-                    ASSERT_TRUE(meta->findInt64(kKeyTime, &timestamp));
-#else
-                    MetaDataBase &meta = buffer->meta_data();
+                    MetaDataBase& meta = buffer->meta_data();
                     ASSERT_TRUE(meta.findInt64(kKeyTime, &timestamp));
-#endif
                     size = buffer->size();
                     data = buffer->data();
                 }
