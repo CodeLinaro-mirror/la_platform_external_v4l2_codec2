@@ -13,13 +13,12 @@
 
 #define __C2_GENERATE_GLOBAL_VARS__
 #include <C2VDAAllocatorStore.h>
+#include <C2VDACommon.h>
 #include <C2VDAComponent.h>
 #include <C2VDAPixelFormat.h>
 #include <C2VDASupport.h>  // to getParamReflector from vda store
 #include <C2VdaBqBlockPool.h>
 #include <C2VdaPooledBlockPool.h>
-
-#include <videodev2_custom.h>
 
 #include <C2AllocatorGralloc.h>
 #include <C2ComponentFactory.h>
@@ -66,22 +65,47 @@ const int kDequeueRetryDelayUs = 10000;  // Wait time of dequeue buffer retry in
 const int32_t kAllocateBufferMaxRetries = 10;  // Max retry time for fetchGraphicBlock timeout.
 }  // namespace
 
+static c2_status_t adaptorResultToC2Status(VideoDecodeAcceleratorAdaptor::Result result) {
+    switch (result) {
+    case VideoDecodeAcceleratorAdaptor::Result::SUCCESS:
+        return C2_OK;
+    case VideoDecodeAcceleratorAdaptor::Result::ILLEGAL_STATE:
+        ALOGE("Got error: ILLEGAL_STATE");
+        return C2_BAD_STATE;
+    case VideoDecodeAcceleratorAdaptor::Result::INVALID_ARGUMENT:
+        ALOGE("Got error: INVALID_ARGUMENT");
+        return C2_BAD_VALUE;
+    case VideoDecodeAcceleratorAdaptor::Result::UNREADABLE_INPUT:
+        ALOGE("Got error: UNREADABLE_INPUT");
+        return C2_BAD_VALUE;
+    case VideoDecodeAcceleratorAdaptor::Result::PLATFORM_FAILURE:
+        ALOGE("Got error: PLATFORM_FAILURE");
+        return C2_CORRUPTED;
+    case VideoDecodeAcceleratorAdaptor::Result::INSUFFICIENT_RESOURCES:
+        ALOGE("Got error: INSUFFICIENT_RESOURCES");
+        return C2_NO_MEMORY;
+    default:
+        ALOGE("Unrecognizable adaptor result (value = %d)...", result);
+        return C2_CORRUPTED;
+    }
+}
+
 C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2ReflectorHelper>& helper)
       : C2InterfaceHelper(helper), mInitStatus(C2_OK) {
     setDerivedInstance(this);
 
     // TODO(johnylin): use factory function to determine whether V4L2 stream or slice API is.
-    uint32_t inputFormatFourcc;
+    InputCodec inputCodec;
     char inputMime[128];
     if (name == kH264DecoderName || name == kH264SecureDecoderName) {
         strcpy(inputMime, MEDIA_MIMETYPE_VIDEO_AVC);
-        inputFormatFourcc = V4L2_PIX_FMT_H264_SLICE;
+        inputCodec = InputCodec::H264;
     } else if (name == kVP8DecoderName || name == kVP8SecureDecoderName) {
         strcpy(inputMime, MEDIA_MIMETYPE_VIDEO_VP8);
-        inputFormatFourcc = V4L2_PIX_FMT_VP8_FRAME;
+        inputCodec = InputCodec::VP8;
     } else if (name == kVP9DecoderName || name == kVP9SecureDecoderName) {
         strcpy(inputMime, MEDIA_MIMETYPE_VIDEO_VP9);
-        inputFormatFourcc = V4L2_PIX_FMT_VP9_FRAME;
+        inputCodec = InputCodec::VP9;
     } else {
         ALOGE("Invalid component name: %s", name.c_str());
         mInitStatus = C2_BAD_VALUE;
@@ -92,12 +116,12 @@ C2VDAComponent::IntfImpl::IntfImpl(C2String name, const std::shared_ptr<C2Reflec
     //       ARC++.
     media::VideoDecodeAccelerator::SupportedProfiles supportedProfiles;
 #ifdef V4L2_CODEC2_ARC
-    supportedProfiles = arc::C2VDAAdaptorProxy::GetSupportedProfiles(inputFormatFourcc);
+    supportedProfiles = arc::C2VDAAdaptorProxy::GetSupportedProfiles(inputCodec);
 #else
-    supportedProfiles = C2VDAAdaptor::GetSupportedProfiles(inputFormatFourcc);
+    supportedProfiles = C2VDAAdaptor::GetSupportedProfiles(inputCodec);
 #endif
     if (supportedProfiles.empty()) {
-        ALOGE("No supported profile from input format: %u", inputFormatFourcc);
+        ALOGE("No supported profile from input codec: %d", inputCodec);
         mInitStatus = C2_BAD_VALUE;
         return;
     }
@@ -556,9 +580,8 @@ void C2VDAComponent::onStopDone() {
         mVDAAdaptor.reset(nullptr);
     }
 
-    mGraphicBlocks.clear();
-
     stopDequeueThread();
+    mGraphicBlocks.clear();
 
     mStopDoneEvent->Signal();
     mStopDoneEvent = nullptr;
@@ -989,9 +1012,10 @@ c2_status_t C2VDAComponent::start() {
                           ::base::Bind(&C2VDAComponent::onStart, ::base::Unretained(this),
                                        mCodecProfile, &done));
     done.Wait();
-    if (mVDAInitResult != VideoDecodeAcceleratorAdaptor::Result::SUCCESS) {
-        ALOGE("Failed to start component due to VDA error: %d", static_cast<int>(mVDAInitResult));
-        return C2_CORRUPTED;
+    c2_status_t c2Status = adaptorResultToC2Status(mVDAInitResult);
+    if (c2Status != C2_OK) {
+        ALOGE("Failed to start component due to VDA error...");
+        return c2Status;
     }
     mState.store(State::RUNNING);
     return C2_OK;
@@ -1080,24 +1104,10 @@ void C2VDAComponent::notifyResetDone() {
 }
 
 void C2VDAComponent::notifyError(VideoDecodeAcceleratorAdaptor::Result error) {
-    ALOGE("Got notifyError from VDA error=%d", error);
-    c2_status_t err;
-    switch (error) {
-    case VideoDecodeAcceleratorAdaptor::Result::ILLEGAL_STATE:
-        err = C2_BAD_STATE;
-        break;
-    case VideoDecodeAcceleratorAdaptor::Result::INVALID_ARGUMENT:
-    case VideoDecodeAcceleratorAdaptor::Result::UNREADABLE_INPUT:
-        err = C2_BAD_VALUE;
-        break;
-    case VideoDecodeAcceleratorAdaptor::Result::PLATFORM_FAILURE:
-        err = C2_CORRUPTED;
-        break;
-    case VideoDecodeAcceleratorAdaptor::Result::INSUFFICIENT_RESOURCES:
-        err = C2_NO_MEMORY;
-        break;
-    case VideoDecodeAcceleratorAdaptor::Result::SUCCESS:
-        ALOGE("Shouldn't get SUCCESS err code in NotifyError(). Skip it...");
+    ALOGE("Got notifyError from VDA...");
+    c2_status_t err = adaptorResultToC2Status(error);
+    if (err == C2_OK) {
+        ALOGW("Shouldn't get SUCCESS err code in NotifyError(). Skip it...");
         return;
     }
     reportError(err);
