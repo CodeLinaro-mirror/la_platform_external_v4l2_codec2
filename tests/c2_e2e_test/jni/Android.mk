@@ -8,18 +8,16 @@ include $(CLEAR_VARS)
 LOCAL_C_INCLUDES := \
 	system/core/include \
 
-LOCAL_MULTILIB := both
-
 LOCAL_SRC_FILES := \
+	video_encoder_e2e_test.cpp \
 	video_decoder_e2e_test.cpp \
 	e2e_test_jni.cpp \
 	common.cpp \
 	encoded_data_helper.cpp \
 	video_frame.cpp \
 	md5.cpp \
+	mediacodec_encoder.cpp \
 	mediacodec_decoder.cpp \
-
-# TODO(stevensd): Port encoder tests
 
 LOCAL_MODULE_TAGS := optional
 
@@ -28,10 +26,10 @@ LOCAL_SHARED_LIBRARIES := \
 	libmediandk \
 	libandroid \
 
-LOCAL_SDK_VERSION := 21
+LOCAL_SDK_VERSION := 28
 LOCAL_NDK_STL_VARIANT := c++_static
 
-LOCAL_STATIC_LIBRARIES := libgtest_ndk_c++ libgtest_main_ndk_c++
+LOCAL_STATIC_LIBRARIES := libgtest_ndk_c++
 
 LOCAL_MODULE := libcodectest
 
