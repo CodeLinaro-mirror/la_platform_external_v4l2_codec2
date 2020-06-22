@@ -29,39 +29,56 @@ constexpr int kTimeoutWaitForInputUs = 1000;  // 1 millisecond
 //   kTimeoutWaitForOutputUs * kTimeoutMaxRetries = 500 milliseconds
 constexpr size_t kTimeoutMaxRetries = 500;
 
-// The specified framerate for generating input timestamps.
-constexpr int32_t kFrameRate = 25;
-
-// Helper function to get possible decoder names from |type|.
+// Helper function to get possible C2 hardware decoder names from |type|.
 std::vector<const char*> GetC2VideoDecoderNames(VideoCodecType type) {
     switch (type) {
     case VideoCodecType::H264:
-        return {"c2.vda.avc.decoder", "ARC.h264.decode"};
+        return {"c2.v4l2.avc.decoder", "c2.vda.avc.decoder"};
     case VideoCodecType::VP8:
-        return {"c2.vda.vp8.decoder", "ARC.vp8.decode"};
+        return {"c2.v4l2.vp8.decoder", "c2.vda.vp8.decoder"};
     case VideoCodecType::VP9:
-        return {"c2.vda.vp9.decoder", "ARC.vp9.decode"};
+        return {"c2.v4l2.vp9.decoder", "c2.vda.vp9.decoder"};
     default:  // unknown type
         return {};
     }
 }
 
-#if ANDROID_VERSION >= 0x0900
+// Helper function to get possible software decoder names from |type|.
+std::vector<const char*> GetSwVideoDecoderNames(VideoCodecType type) {
+    switch (type) {
+    case VideoCodecType::H264:
+        return {"OMX.google.h264.decoder"};
+    case VideoCodecType::VP8:
+        return {"OMX.google.vp8.decoder"};
+    case VideoCodecType::VP9:
+        return {"OMX.google.vp9.decoder"};
+    default:  // unknown type
+        return {};
+    }
+}
+
 const uint32_t BUFFER_FLAG_CODEC_CONFIG = AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG;
 const char* FORMAT_KEY_SLICE_HEIGHT = AMEDIAFORMAT_KEY_SLICE_HEIGHT;
-#else
-// Define non-exported constants of MediaCodec NDK interface here for usage of
-// Android Version < Pie.
-const uint32_t BUFFER_FLAG_CODEC_CONFIG = 2;
-const char* FORMAT_KEY_SLICE_HEIGHT = "slice-height";
-#endif
+
+int64_t GetCurrentTimeNs() {
+    timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return now.tv_sec * UINT64_C(1000000000) + now.tv_nsec;
+}
+
+int64_t RoundUp(int64_t n, int64_t multiple) {
+    return ((n + (multiple - 1)) / multiple) * multiple;
+}
 
 }  // namespace
 
 // static
 std::unique_ptr<MediaCodecDecoder> MediaCodecDecoder::Create(const std::string& input_path,
                                                              VideoCodecProfile profile,
-                                                             const Size& video_size) {
+                                                             bool use_sw_decoder,
+                                                             const Size& video_size, int frame_rate,
+                                                             ANativeWindow* surface,
+                                                             bool render_on_release, bool loop) {
     if (video_size.IsEmpty()) {
         ALOGE("Size is not valid: %dx%d", video_size.width, video_size.height);
         return nullptr;
@@ -76,7 +93,8 @@ std::unique_ptr<MediaCodecDecoder> MediaCodecDecoder::Create(const std::string& 
     }
 
     AMediaCodec* codec = nullptr;
-    auto decoder_names = GetC2VideoDecoderNames(type);
+    auto decoder_names =
+            use_sw_decoder ? GetSwVideoDecoderNames(type) : GetC2VideoDecoderNames(type);
     for (const auto& decoder_name : decoder_names) {
         codec = AMediaCodec_createCodecByName(decoder_name);
         if (codec) {
@@ -89,17 +107,55 @@ std::unique_ptr<MediaCodecDecoder> MediaCodecDecoder::Create(const std::string& 
         return nullptr;
     }
 
-    return std::unique_ptr<MediaCodecDecoder>(
-            new MediaCodecDecoder(codec, std::move(encoded_data_helper), type, video_size));
+    auto ret = std::unique_ptr<MediaCodecDecoder>(
+            new MediaCodecDecoder(codec, std::move(encoded_data_helper), type, video_size,
+                                  frame_rate, surface, render_on_release, loop));
+
+    AMediaCodecOnAsyncNotifyCallback cb{
+            .onAsyncInputAvailable =
+                    [](AMediaCodec* codec, void* userdata, int32_t index) {
+                        reinterpret_cast<MediaCodecDecoder*>(userdata)->OnAsyncInputAvailable(
+                                index);
+                    },
+            .onAsyncOutputAvailable =
+                    [](AMediaCodec* codec, void* userdata, int32_t index,
+                       AMediaCodecBufferInfo* buffer_info) {
+                        reinterpret_cast<MediaCodecDecoder*>(userdata)->OnAsyncOutputAvailable(
+                                index, buffer_info);
+                    },
+            .onAsyncFormatChanged =
+                    [](AMediaCodec* codec, void* userdata, AMediaFormat* format) {
+                        reinterpret_cast<MediaCodecDecoder*>(userdata)->OnAsyncFormatChanged(
+                                format);
+                    },
+            .onAsyncError =
+                    [](AMediaCodec* codec, void* userdata, media_status_t error, int32_t code,
+                       const char* detail) {
+                        ALOGE("Error %d (%d) %s", error, code, detail);
+                        assert(false);
+                    }};
+
+    auto status = AMediaCodec_setAsyncNotifyCallback(codec, cb, ret.get());
+    if (status != AMEDIA_OK) {
+        ALOGE("Failed to set async callback.");
+        return nullptr;
+    }
+
+    return ret;
 }
 
 MediaCodecDecoder::MediaCodecDecoder(AMediaCodec* codec,
                                      std::unique_ptr<EncodedDataHelper> encoded_data_helper,
-                                     VideoCodecType type, const Size& size)
+                                     VideoCodecType type, const Size& size, int frame_rate,
+                                     ANativeWindow* surface, bool render_on_release, bool loop)
       : codec_(codec),
         encoded_data_helper_(std::move(encoded_data_helper)),
         type_(type),
-        input_visible_size_(size) {}
+        input_visible_size_(size),
+        frame_rate_(frame_rate),
+        surface_(surface),
+        render_on_release_(render_on_release),
+        looping_(loop) {}
 
 MediaCodecDecoder::~MediaCodecDecoder() {
     if (codec_ != nullptr) {
@@ -115,6 +171,24 @@ void MediaCodecDecoder::AddOutputFormatChangedCb(const OutputFormatChangedCb& cb
     output_format_changed_cbs_.push_back(cb);
 }
 
+void MediaCodecDecoder::OnAsyncInputAvailable(int32_t idx) {
+    std::lock_guard<std::mutex> lock(event_queue_mut_);
+    event_queue_.push({.type = INPUT_AVAILABLE, .idx = idx});
+    event_queue_cv_.notify_one();
+}
+
+void MediaCodecDecoder::OnAsyncOutputAvailable(int32_t idx, AMediaCodecBufferInfo* info) {
+    std::lock_guard<std::mutex> lock(event_queue_mut_);
+    event_queue_.push({.type = OUTPUT_AVAILABLE, .idx = idx, .info = *info});
+    event_queue_cv_.notify_one();
+}
+
+void MediaCodecDecoder::OnAsyncFormatChanged(AMediaFormat* format) {
+    std::lock_guard<std::mutex> lock(event_queue_mut_);
+    event_queue_.push({.type = FORMAT_CHANGED});
+    event_queue_cv_.notify_one();
+}
+
 void MediaCodecDecoder::Rewind() {
     encoded_data_helper_->Rewind();
     input_fragment_index_ = 0;
@@ -127,8 +201,8 @@ bool MediaCodecDecoder::Configure() {
     AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, GetMimeType(type_));
     AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, input_visible_size_.width);
     AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_HEIGHT, input_visible_size_.height);
-    media_status_t ret = AMediaCodec_configure(codec_, format, nullptr /* surface */,
-                                               nullptr /* crtpto */, 0 /* flag */);
+    media_status_t ret =
+            AMediaCodec_configure(codec_, format, surface_, nullptr /* crtpto */, 0 /* flag */);
     AMediaFormat_delete(format);
     if (ret != AMEDIA_OK) {
         ALOGE("Configure return error: %d", ret);
@@ -148,86 +222,73 @@ bool MediaCodecDecoder::Start() {
 
 bool MediaCodecDecoder::Decode() {
     while (!output_done_) {
-        size_t retries = 0;
-        bool success = false;
-
-        // It will keep retrying until one output buffer is dequeued successfully.
-        // On each retry we would like to enqueue input buffers as fast as possible.
-        // The retry loop will break as failure if maxmimum retries are reached or
-        // errors returned from enqueue input buffer or dequeue output buffer.
-        while (retries < kTimeoutMaxRetries && !success) {
-            if (!EnqueueInputBuffers()) return false;
-
-            switch (DequeueOutputBuffer()) {
-            case DequeueStatus::RETRY:
-                retries++;
-                break;
-            case DequeueStatus::SUCCESS:
-                success = true;
-                break;
-            case DequeueStatus::FAILURE:
-                return false;
+        CodecEvent evt;
+        {
+            std::unique_lock<std::mutex> lock(event_queue_mut_);
+            while (event_queue_.empty()) {
+                event_queue_cv_.wait(lock);
             }
+            evt = event_queue_.front();
+            event_queue_.pop();
         }
 
-        if (retries >= kTimeoutMaxRetries) {
-            ALOGE("Decoder did not produce an output buffer after %zu retries", kTimeoutMaxRetries);
+        bool success;
+        switch (evt.type) {
+        case INPUT_AVAILABLE:
+            success = EnqueueInputBuffers(evt.idx);
+            break;
+        case OUTPUT_AVAILABLE:
+            success = DequeueOutputBuffer(evt.idx, evt.info);
+            break;
+        case FORMAT_CHANGED:
+            success = GetOutputFormat();
+            break;
         }
-        if (!success) return false;
+        assert(success);
     }
     return true;
 }
 
-bool MediaCodecDecoder::EnqueueInputBuffers() {
-    ssize_t index;
-    while (!input_done_) {
-        index = AMediaCodec_dequeueInputBuffer(codec_, kTimeoutWaitForInputUs);
-        if (index == AMEDIACODEC_INFO_TRY_AGAIN_LATER)
-            return true;  // no available input buffers, try next time
+bool MediaCodecDecoder::EnqueueInputBuffers(int32_t index) {
+    if (index < 0) {
+        ALOGE("Unknown error while dequeueInputBuffer: %zd", index);
+        return false;
+    }
 
-        if (index < 0) {
-            ALOGE("Unknown error while dequeueInputBuffer: %zd", index);
-            return false;
-        }
+    if (looping_ && encoded_data_helper_->ReachEndOfStream()) {
+        encoded_data_helper_->Rewind();
+    }
 
-        if (encoded_data_helper_->ReachEndOfStream()) {
-            if (!FeedEOSInputBuffer(index)) return false;
-            input_done_ = true;
-        } else {
-            if (!FeedInputBuffer(index)) return false;
-        }
+    if (encoded_data_helper_->ReachEndOfStream()) {
+        if (!FeedEOSInputBuffer(index)) return false;
+        input_done_ = true;
+    } else {
+        if (!FeedInputBuffer(index)) return false;
     }
     return true;
 }
 
-MediaCodecDecoder::DequeueStatus MediaCodecDecoder::DequeueOutputBuffer() {
-    AMediaCodecBufferInfo info;
-    ssize_t index = AMediaCodec_dequeueOutputBuffer(codec_, &info, kTimeoutWaitForOutputUs);
-
-    switch (index) {
-    case AMEDIACODEC_INFO_TRY_AGAIN_LATER:
-        ALOGV("Try again later is reported");
-        return DequeueStatus::RETRY;
-    case AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED:
-        ALOGV("Output buffers changed");
-        return DequeueStatus::RETRY;
-    case AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED:
-        ALOGV("Output format changed");
-        if (GetOutputFormat())
-            return DequeueStatus::SUCCESS;
-        else
-            return DequeueStatus::FAILURE;
-    default:
-        if (index < 0) {
-            ALOGE("Unknown error while dequeueOutputBuffer: %zd", index);
-            return DequeueStatus::FAILURE;
-        }
-        break;
+bool MediaCodecDecoder::DequeueOutputBuffer(int32_t index, AMediaCodecBufferInfo info) {
+    if (index < 0) {
+        ALOGE("Unknown error while dequeueOutputBuffer: %zd", index);
+        return false;
     }
 
     if (info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM) output_done_ = true;
-    if (!ReceiveOutputBuffer(index, info)) return DequeueStatus::FAILURE;
-    return DequeueStatus::SUCCESS;
+
+    if (info.presentationTimeUs) {
+        uint64_t now = GetCurrentTimeNs();
+        if ((now - base_timestamp_ns_) > (info.presentationTimeUs * 1000)) {
+            drop_frame_count_++;
+            ALOGD("Drop frame #%d: deadline %lu, actual %lu", drop_frame_count_,
+                  GetReleaseTimestampNs(info), now);
+            base_timestamp_ns_ = now - info.presentationTimeUs * 1000;
+        }
+    }
+
+    if (!ReceiveOutputBuffer(index, info, render_on_release_)) return false;
+
+    return true;
 }
 
 bool MediaCodecDecoder::Stop() {
@@ -258,9 +319,9 @@ bool MediaCodecDecoder::FeedInputBuffer(size_t index) {
     uint32_t input_flag = 0;
     if (fragment->csd_flag) input_flag |= BUFFER_FLAG_CODEC_CONFIG;
 
-    uint64_t timestamp_us = input_fragment_index_ * 1000000 / kFrameRate;
+    uint64_t timestamp_us = input_fragment_index_ * 1000000 / frame_rate_;
 
-    ALOGV("queueInputBuffer(index=%zu, offset=0, size=%zu, time=%" PRIu64 ", flags=%u) #%d", index,
+    ALOGD("queueInputBuffer(index=%zu, offset=0, size=%zu, time=%" PRIu64 ", flags=%u) #%d", index,
           fragment->data.size(), timestamp_us, input_flag, input_fragment_index_);
     media_status_t status = AMediaCodec_queueInputBuffer(
             codec_, index, 0 /* offset */, fragment->data.size(), timestamp_us, input_flag);
@@ -277,7 +338,7 @@ bool MediaCodecDecoder::FeedEOSInputBuffer(size_t index) {
     // robustness.
     uint64_t timestamp_us = 0;
 
-    ALOGV("queueInputBuffer(index=%zu) EOS", index);
+    ALOGD("queueInputBuffer(index=%zu) EOS", index);
     media_status_t status =
             AMediaCodec_queueInputBuffer(codec_, index, 0 /* offset */, 0 /* size */, timestamp_us,
                                          AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM);
@@ -288,16 +349,20 @@ bool MediaCodecDecoder::FeedEOSInputBuffer(size_t index) {
     return true;
 }
 
-bool MediaCodecDecoder::ReceiveOutputBuffer(size_t index, const AMediaCodecBufferInfo& info) {
-    size_t out_size;
-    uint8_t* buf = AMediaCodec_getOutputBuffer(codec_, index, &out_size);
-    if (!buf) {
-        ALOGE("Failed to getOutputBuffer(index=%zu)", index);
-        return false;
+bool MediaCodecDecoder::ReceiveOutputBuffer(size_t index, const AMediaCodecBufferInfo& info,
+                                            bool render_buffer) {
+    size_t out_size = 0;
+    uint8_t* buf = nullptr;
+    if (!surface_) {
+        buf = AMediaCodec_getOutputBuffer(codec_, index, &out_size);
+        if (!buf) {
+            ALOGE("Failed to getOutputBuffer(index=%zu)", index);
+            return false;
+        }
     }
 
     received_outputs_++;
-    ALOGV("ReceiveOutputBuffer(index=%zu, size=%d, time=%" PRId64 ", flags=%u) #%d", index,
+    ALOGD("ReceiveOutputBuffer(index=%zu, size=%d, time=%" PRId64 ", flags=%u) #%d", index,
           info.size, info.presentationTimeUs, info.flags, received_outputs_);
 
     // Do not callback for dummy EOS output (info.size == 0)
@@ -306,7 +371,10 @@ bool MediaCodecDecoder::ReceiveOutputBuffer(size_t index, const AMediaCodecBuffe
             callback(buf, info.size, received_outputs_);
     }
 
-    media_status_t status = AMediaCodec_releaseOutputBuffer(codec_, index, false /* render */);
+    media_status_t status =
+            render_buffer ? AMediaCodec_releaseOutputBufferAtTime(codec_, index,
+                                                                  GetReleaseTimestampNs(info))
+                          : AMediaCodec_releaseOutputBuffer(codec_, index, false /* render */);
     if (status != AMEDIA_OK) {
         ALOGE("Failed to releaseOutputBuffer(index=%zu): %d", index, status);
         return false;
@@ -342,7 +410,6 @@ bool MediaCodecDecoder::GetOutputFormat() {
     int32_t crop_top = 0;
     int32_t crop_right = width - 1;
     int32_t crop_bottom = height - 1;
-#if ANDROID_VERSION >= 0x0900  // Android 9.0 (Pie)
     // Crop info is only avaiable on NDK version >= Pie.
     if (!AMediaFormat_getRect(format, AMEDIAFORMAT_KEY_DISPLAY_CROP, &crop_left, &crop_top,
                               &crop_right, &crop_bottom)) {
@@ -352,10 +419,6 @@ bool MediaCodecDecoder::GetOutputFormat() {
         crop_right = width - 1;
         crop_bottom = height - 1;
     }
-#endif
-    // Note: For ARC++N, width and height are set as same as the size of crop
-    //       window in ArcCodec. So the values above will be still satisfied in
-    //       ARC++N.
 
     // In current exiting ARC video decoder crop origin is always at (0,0)
     if (crop_left != 0 || crop_top != 0) {
@@ -380,6 +443,17 @@ bool MediaCodecDecoder::GetOutputFormat() {
                  Size(crop_right - crop_left + 1, crop_bottom - crop_top + 1), color_format);
     }
     return success;
+}
+
+int64_t MediaCodecDecoder::GetReleaseTimestampNs(const AMediaCodecBufferInfo& info) {
+    if (info.presentationTimeUs == 0) {
+        assert(base_timestamp_ns_ == 0);
+        base_timestamp_ns_ = GetCurrentTimeNs();
+    } else {
+        assert(base_timestamp_ns_ != 0);
+    }
+
+    return base_timestamp_ns_ + info.presentationTimeUs * 1000;
 }
 
 }  // namespace android
