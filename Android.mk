@@ -6,15 +6,15 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
+        C2EncoderInterface.cpp \
         C2VDAComponent.cpp \
-        C2VEAComponent.cpp \
-        C2VEAFormatConverter.cpp \
         C2VDAAdaptor.cpp   \
 
 LOCAL_C_INCLUDES += \
         $(TOP)/external/libchrome \
         $(TOP)/external/gtest/include \
         $(TOP)/external/v4l2_codec2/accel \
+        $(TOP)/external/v4l2_codec2/common \
         $(TOP)/external/v4l2_codec2/include \
         $(TOP)/frameworks/av/media/codec2/components/base/include \
         $(TOP)/frameworks/av/media/codec2/core/include \
@@ -44,7 +44,7 @@ LOCAL_SHARED_LIBRARIES := android.hardware.graphics.common@1.0 \
                           libv4l2_codec2_accel \
                           libvda_c2_pixelformat \
 
-LOCAL_STATIC_LIBRARIES := libyuv_static \
+LOCAL_STATIC_LIBRARIES := libv4l2_codec2_common \
 
 # -Wno-unused-parameter is needed for libchrome/base codes
 LOCAL_CFLAGS += -Werror -Wall -Wno-unused-parameter

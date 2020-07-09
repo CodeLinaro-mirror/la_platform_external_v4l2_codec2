@@ -7,20 +7,21 @@
 
 #include <C2CompIntfTest.h>
 
-#include <C2VEAComponent.h>
-
-#include <C2PlatformSupport.h>
-
-#include <gtest/gtest.h>
-#include <utils/Log.h>
-
 #include <inttypes.h>
 #include <stdio.h>
 #include <limits>
 
+#include <C2PlatformSupport.h>
+#include <SimpleC2Interface.h>
+#include <gtest/gtest.h>
+#include <utils/Log.h>
+
+#include <C2EncoderInterface.h>
+#include <v4l2_device.h>
+
 namespace android {
 
-constexpr const char* testCompName = "c2.vea.avc.encoder";
+constexpr const char* testCompName = "c2.v4l2.avc.encoder";
 constexpr c2_node_id_t testCompNodeId = 12345;
 
 constexpr const char* MEDIA_MIMETYPE_VIDEO_RAW = "video/raw";
@@ -30,16 +31,45 @@ constexpr C2Allocator::id_t kInputAllocators[] = {C2PlatformAllocatorStore::GRAL
 constexpr C2Allocator::id_t kOutputAllocators[] = {C2PlatformAllocatorStore::BLOB};
 constexpr C2BlockPool::local_id_t kDefaultOutputBlockPool = C2BlockPool::BASIC_LINEAR;
 
-class C2VEACompIntfTest : public C2CompIntfTest {
+class C2V4L2EncoderInterface: public C2EncoderInterface {
+public:
+    C2V4L2EncoderInterface(const C2String& name, const std::shared_ptr<C2ReflectorHelper>& helper,
+            media::V4L2Device* device) :
+            C2EncoderInterface(helper) {
+        ALOGV("%s(%s)", __func__, name.c_str());
+        ALOG_ASSERT(device);
+
+        std::vector<VideoEncodeProfile> supportedProfiles;
+        for (const auto& supportedProfile : device->GetSupportedEncodeProfiles()) {
+            supportedProfiles.emplace_back(
+                    VideoEncodeProfile { .mProfile = supportedProfile.profile, .mMaxResolution =
+                            supportedProfile.max_resolution, .mMaxFramerateNumerator =
+                            supportedProfile.max_framerate_numerator, .mMaxFramerateDenominator =
+                            supportedProfile.max_framerate_denominator });
+        }
+
+        Initialize(name, supportedProfiles);
+        mInitStatus = C2_OK;
+    }
+
+    base::Optional<media::VideoCodec> getCodecFromComponentName(const std::string& /*name*/) const {
+        return media::VideoCodec::kCodecH264;
+    }
+};
+
+class C2VEACompIntfTest: public C2CompIntfTest {
 protected:
     C2VEACompIntfTest() {
         mReflector = std::make_shared<C2ReflectorHelper>();
-        std::unique_ptr<VideoEncodeAcceleratorAdaptor> adaptor;
-        mIntf = std::shared_ptr<C2ComponentInterface>(new SimpleInterface<C2VEAComponent::IntfImpl>(
-                testCompName, testCompNodeId,
-                std::make_shared<C2VEAComponent::IntfImpl>(testCompName, mReflector, &adaptor)));
+        scoped_refptr<media::V4L2Device> device = media::V4L2Device::Create();
+        auto componentInterface = std::make_shared<C2V4L2EncoderInterface>(
+                testCompName, mReflector, device.get());
+        mIntf = std::shared_ptr<C2ComponentInterface>(
+                new SimpleInterface<C2V4L2EncoderInterface>(
+                        testCompName, testCompNodeId, componentInterface));
     }
-    ~C2VEACompIntfTest() override {}
+    ~C2VEACompIntfTest() override {
+    }
 };
 
 #define TRACED_FAILURE(func)                            \
@@ -225,8 +255,8 @@ TEST_F(C2VEACompIntfTest, TestOutputBlockPoolIds) {
     // Query the param and check the default value.
     ASSERT_EQ(C2_OK, mIntf->query_vb({}, {index}, C2_DONT_BLOCK, &heapParams));
     ASSERT_EQ(1u, heapParams.size());
-    C2BlockPool::local_id_t value = reinterpret_cast<C2PortBlockPoolsTuning*>(
-            heapParams[0].get())->m.values[0];
+    C2BlockPool::local_id_t value =
+            reinterpret_cast<C2PortBlockPoolsTuning*>(heapParams[0].get())->m.values[0];
     ASSERT_EQ(kDefaultOutputBlockPool, value);
 
     // Configure the param.
