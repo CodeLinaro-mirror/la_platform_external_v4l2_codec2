@@ -7,6 +7,9 @@
 // Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 
+//#define LOG_NDEBUG 0
+#define LOG_TAG "V4L2DevicePoller"
+
 #include <v4l2_codec2/common/V4L2DevicePoller.h>
 
 #include <string>
@@ -35,6 +38,8 @@ V4L2DevicePoller::~V4L2DevicePoller() {
 
 bool V4L2DevicePoller::startPolling(EventCallback eventCallback,
                                     base::RepeatingClosure errorCallback) {
+    ALOG_ASSERT(mClientTaskTunner->RunsTasksInCurrentSequence());
+
     if (isPolling()) return true;
 
     ALOGV("Starting polling");
