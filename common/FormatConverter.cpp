@@ -173,6 +173,7 @@ C2ConstGraphicBlock FormatConverter::convertBlock(uint64_t frameIndex,
 
     BlockEntry* entry = mAvailableQueue.front();
     std::shared_ptr<C2GraphicBlock> outputBlock = entry->mBlock;
+    VideoPixelFormat inputFormat = VideoPixelFormat::UNKNOWN;
 
     const C2GraphicView& inputView = inputBlock.map().get();
     C2PlanarLayout inputLayout = inputView.layout();
@@ -188,7 +189,17 @@ C2ConstGraphicBlock FormatConverter::convertBlock(uint64_t frameIndex,
             *status = C2_CORRUPTED;
             return inputBlock;  // This is actually redundant and should not be used.
         }
+        // There is only RGBA_8888 specified in C2AllocationGralloc::map(), no BGRA_8888. Maybe
+        // BGRA_8888 is not used now?
+        inputFormat = VideoPixelFormat::ABGR;
         inputLayout.type = C2PlanarLayout::TYPE_RGBA;
+    }
+
+    if (inputFormat == mOutFormat) {
+        ALOGV("Zero-Copy is applied");
+        mGraphicBlocks.emplace_back(new BlockEntry(frameIndex));
+        *status = C2_OK;
+        return inputBlock;
     }
 
     C2GraphicView outputView = outputBlock->map().get();
@@ -202,7 +213,6 @@ C2ConstGraphicBlock FormatConverter::convertBlock(uint64_t frameIndex,
     const int dstStrideV = outputLayout.planes[C2PlanarLayout::PLANE_U].rowInc;   // only for I420
     const int dstStrideUV = outputLayout.planes[C2PlanarLayout::PLANE_U].rowInc;  // only for NV12
 
-    VideoPixelFormat inputFormat = VideoPixelFormat::UNKNOWN;
     *status = C2_OK;
     if (inputLayout.type == C2PlanarLayout::TYPE_YUV) {
         const uint8_t* srcY = inputView.data()[C2PlanarLayout::PLANE_Y];
@@ -211,6 +221,7 @@ C2ConstGraphicBlock FormatConverter::convertBlock(uint64_t frameIndex,
         const int srcStrideY = inputLayout.planes[C2PlanarLayout::PLANE_Y].rowInc;
         const int srcStrideU = inputLayout.planes[C2PlanarLayout::PLANE_U].rowInc;
         const int srcStrideV = inputLayout.planes[C2PlanarLayout::PLANE_V].rowInc;
+
         if (inputLayout.rootPlanes == 3) {
             inputFormat = VideoPixelFormat::YV12;
         } else if (inputLayout.rootPlanes == 2) {
@@ -220,6 +231,7 @@ C2ConstGraphicBlock FormatConverter::convertBlock(uint64_t frameIndex,
         if (inputFormat == mOutFormat) {
             ALOGV("Zero-Copy is applied");
             mGraphicBlocks.emplace_back(new BlockEntry(frameIndex));
+            *status = C2_OK;
             return inputBlock;
         }
 
