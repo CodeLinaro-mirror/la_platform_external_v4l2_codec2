@@ -192,7 +192,7 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
     return true;
 }
 
-void V4L2Decoder::decode(std::unique_ptr<BitstreamBuffer> buffer, DecodeCB decodeCb) {
+void V4L2Decoder::decode(std::unique_ptr<ConstBitstreamBuffer> buffer, DecodeCB decodeCb) {
     ALOGV("%s(id=%d)", __func__, buffer->id);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
@@ -300,7 +300,7 @@ void V4L2Decoder::pumpDecodeRequest() {
         inputBuffer->setPlaneDataOffset(0, request.buffer->offset);
         inputBuffer->setPlaneBytesUsed(0, request.buffer->offset + request.buffer->size);
         std::vector<int> fds;
-        fds.push_back(std::move(request.buffer->dmabuf_fd));
+        fds.push_back(std::move(request.buffer->dmabuf.handle()->data[0]));
         if (!std::move(*inputBuffer).queueDMABuf(fds)) {
             ALOGE("%s(): Failed to QBUF to input queue, bitstreamId=%d", __func__, bitstreamId);
             onError();
@@ -529,10 +529,13 @@ bool V4L2Decoder::changeResolution() {
     mFrameAtDevice.clear();
     mBlockIdToV4L2Id.clear();
 
-    if (mOutputQueue->allocateBuffers(*numOutputBuffers, V4L2_MEMORY_DMABUF) == 0) {
+    const size_t adjustedNumOutputBuffers =
+            mOutputQueue->allocateBuffers(*numOutputBuffers, V4L2_MEMORY_DMABUF);
+    if (adjustedNumOutputBuffers == 0) {
         ALOGE("Failed to allocate output buffer.");
         return false;
     }
+    ALOGV("Allocated %zu output buffers.", adjustedNumOutputBuffers);
     if (!mOutputQueue->streamon()) {
         ALOGE("Failed to streamon output queue.");
         return false;
@@ -542,7 +545,8 @@ bool V4L2Decoder::changeResolution() {
     // exists at the same time.
     mVideoFramePool.reset();
     // Always use flexible pixel 420 format YCBCR_420_888 in Android.
-    mVideoFramePool = mGetPoolCb.Run(mCodedSize, HalPixelFormat::YCBCR_420_888, *numOutputBuffers);
+    mVideoFramePool =
+            mGetPoolCb.Run(mCodedSize, HalPixelFormat::YCBCR_420_888, adjustedNumOutputBuffers);
     if (!mVideoFramePool) {
         ALOGE("Failed to get block pool with size: %s", toString(mCodedSize).c_str());
         return false;
