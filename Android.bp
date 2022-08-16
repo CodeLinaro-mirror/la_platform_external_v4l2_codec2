@@ -13,6 +13,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 // This project defines a module named libc2plugin_store which is installed into
 // $OUT/vendor/lib/libc2plugin_store.so. Although the module can be overridden,
 // the output filename cannot (b/204136549).
