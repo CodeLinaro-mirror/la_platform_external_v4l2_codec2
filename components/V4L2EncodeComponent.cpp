@@ -257,10 +257,12 @@ V4L2EncodeComponent::~V4L2EncodeComponent() {
     if (mEncoderThread.IsRunning()) {
         mEncoderTaskRunner->PostTask(
                 FROM_HERE, ::base::BindOnce(
-                                   [](::base::WeakPtrFactory<V4L2EncodeComponent>* weakPtrFactory) {
+                                   [](::base::WeakPtrFactory<V4L2EncodeComponent>* weakPtrFactory,
+                                      std::unique_ptr<VideoEncoder>* encoder) {
                                        weakPtrFactory->InvalidateWeakPtrs();
+                                       encoder->reset();
                                    },
-                                   &mWeakThisFactory));
+                                   &mWeakThisFactory, &mEncoder));
         mEncoderThread.Stop();
     }
 
