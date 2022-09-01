@@ -255,20 +255,6 @@ void V4L2Decoder::pumpDecodeRequest() {
         // Drain the decoder.
         if (mDecodeRequests.front().buffer == nullptr) {
             ALOGV("Get drain request.");
-            // Send the flush command after all input buffers are dequeued. This makes
-            // sure all previous resolution changes have been handled because the
-            // driver must hold the input buffer that triggers resolution change. The
-            // driver cannot decode data in it without new output buffers. If we send
-            // the flush now and a queued input buffer triggers resolution change
-            // later, the driver will send an output buffer that has
-            // V4L2_BUF_FLAG_LAST. But some queued input buffer have not been decoded
-            // yet. Also, V4L2VDA calls STREAMOFF and STREAMON after resolution
-            // change. They implicitly send a V4L2_DEC_CMD_STOP and V4L2_DEC_CMD_START
-            // to the decoder.
-            if (mInputQueue->queuedBuffersCount() > 0) {
-                ALOGV("Wait for all input buffers dequeued.");
-                return;
-            }
 
             auto request = std::move(mDecodeRequests.front());
             mDecodeRequests.pop();
