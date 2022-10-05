@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2DecodeComponent"
 
@@ -492,8 +496,9 @@ void V4L2DecodeComponent::pumpPendingWorks() {
                 }
             }
 
+            C2ReadView view = linearBlock.map().get();
             std::unique_ptr<ConstBitstreamBuffer> buffer = std::make_unique<ConstBitstreamBuffer>(
-                    bitstreamId, linearBlock, linearBlock.offset(), linearBlock.size());
+                    bitstreamId, linearBlock, linearBlock.offset(), linearBlock.size(), view.data());
             if (!buffer) {
                 reportError(C2_CORRUPTED);
                 return;

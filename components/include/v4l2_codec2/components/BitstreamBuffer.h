@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_COMPONENTS_BITSTREAMBUFFER_H
 #define ANDROID_V4L2_CODEC2_COMPONENTS_BITSTREAMBUFFER_H
 
@@ -14,14 +18,15 @@ namespace android {
 // The ConstBitstreamBuffer class can be used to store non-modifiable encoded video data.
 struct ConstBitstreamBuffer {
     ConstBitstreamBuffer(const int32_t id, C2ConstLinearBlock dmabuf, const size_t offset,
-                         const size_t size)
-          : id(id), dmabuf(std::move(dmabuf)), offset(offset), size(size) {}
+                         const size_t size, const uint8_t *data)
+          : id(id), dmabuf(std::move(dmabuf)), offset(offset), size(size), data(data) {}
     ~ConstBitstreamBuffer() = default;
 
     const int32_t id;
     C2ConstLinearBlock dmabuf;
     const size_t offset;
     const size_t size;
+    const uint8_t *data;
 };
 
 // The BitstreamBuffer class can be used to store modifiable encoded video data.
