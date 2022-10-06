@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_COMPONENTS_V4L2_DECODE_INTERFACE_H
 #define ANDROID_V4L2_CODEC2_COMPONENTS_V4L2_DECODE_INTERFACE_H
 
@@ -62,6 +66,9 @@ private:
     std::shared_ptr<C2PortMediaTypeSetting::input> mInputMediaType;
     // The MIME type of output port; should be MEDIA_MIMETYPE_VIDEO_RAW.
     std::shared_ptr<C2PortMediaTypeSetting::output> mOutputMediaType;
+    // The number of additional input frames that might need to be queued before the first
+    // output buffer can be released by the decoder.
+    std::shared_ptr<C2PortDelayTuning::input> mInputDelay;
     // The number of additional output frames that might need to be generated before an output
     // buffer can be released by the component; only used for H264 because H264 may reorder the
     // output frames.

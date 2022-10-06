@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2DecodeInterface"
 
@@ -227,6 +231,12 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                          .withConstValue(
                                  new C2StreamBufferTypeSetting::output(0u, C2BufferData::GRAPHIC))
                          .build());
+
+    addParameter(
+            DefineParam(mInputDelay, C2_PARAMKEY_INPUT_DELAY)
+                    .withConstValue(new C2PortDelayTuning::input(4u))
+                    .build());
+
     addParameter(
             DefineParam(mOutputDelay, C2_PARAMKEY_OUTPUT_DELAY)
                     .withConstValue(new C2PortDelayTuning::output(getOutputDelay(*mVideoCodec)))
