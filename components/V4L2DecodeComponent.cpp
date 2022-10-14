@@ -62,8 +62,8 @@ size_t getMinNumOutputBuffers(VideoCodec codec) {
 }
 
 // Mask against 30 bits to avoid (undefined) wraparound on signed integer.
-int32_t frameIndexToBitstreamId(c2_cntr64_t frameIndex) {
-    return static_cast<int32_t>(frameIndex.peeku() & 0x3FFFFFFF);
+int32_t timestampToBitstreamId(c2_cntr64_t timestamp, c2_cntr64_t frameIndex) {
+    return static_cast<int32_t>((timestamp.peekull() + frameIndex.peekull()) & 0x3FFFFFFF);
 }
 
 bool parseCodedColorAspects(const C2ConstLinearBlock& input,
@@ -107,7 +107,8 @@ bool parseCodedColorAspects(const C2ConstLinearBlock& input,
 }
 
 bool isWorkDone(const C2Work& work) {
-    const int32_t bitstreamId = frameIndexToBitstreamId(work.input.ordinal.frameIndex);
+    const int32_t bitstreamId = timestampToBitstreamId(work.input.ordinal.timestamp,
+                                                       work.input.ordinal.frameIndex);
 
     // Exception: EOS work should be processed by reportEOSWork().
     // Always return false here no matter the work is actually done.
@@ -459,7 +460,8 @@ void V4L2DecodeComponent::pumpPendingWorks() {
         std::unique_ptr<C2Work> pendingWork(std::move(mPendingWorks.front()));
         mPendingWorks.pop();
 
-        const int32_t bitstreamId = frameIndexToBitstreamId(pendingWork->input.ordinal.frameIndex);
+        const int32_t bitstreamId = timestampToBitstreamId(pendingWork->input.ordinal.timestamp,
+                                                           pendingWork->input.ordinal.frameIndex);
         const bool isCSDWork = pendingWork->input.flags & C2FrameData::FLAG_CODEC_CONFIG;
         const bool isEmptyWork = pendingWork->input.buffers.front() == nullptr;
         const bool isEOSWork = pendingWork->input.flags & C2FrameData::FLAG_END_OF_STREAM;
