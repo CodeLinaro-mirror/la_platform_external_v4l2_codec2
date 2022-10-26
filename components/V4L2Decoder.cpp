@@ -200,7 +200,8 @@ bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
         return false;
     }
 
-    if (!mDevice->startPolling(::base::BindRepeating(&V4L2Decoder::serviceDeviceTask, mWeakThis),
+    if (!mDevice->startPolling(mTaskRunner,
+                               ::base::BindRepeating(&V4L2Decoder::serviceDeviceTask, mWeakThis),
                                ::base::BindRepeating(&V4L2Decoder::onError, mWeakThis))) {
         ALOGE("Failed to start polling V4L2 device.");
         return false;
@@ -556,7 +557,8 @@ void V4L2Decoder::flush() {
         tryFetchVideoFrame();
     }
 
-    if (!mDevice->startPolling(::base::BindRepeating(&V4L2Decoder::serviceDeviceTask, mWeakThis),
+    if (!mDevice->startPolling(mTaskRunner,
+                               ::base::BindRepeating(&V4L2Decoder::serviceDeviceTask, mWeakThis),
                                ::base::BindRepeating(&V4L2Decoder::onError, mWeakThis))) {
         ALOGE("Failed to start polling V4L2 device.");
         onError();

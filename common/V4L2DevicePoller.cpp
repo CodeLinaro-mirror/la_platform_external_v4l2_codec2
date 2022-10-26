@@ -23,9 +23,11 @@
 
 namespace android {
 
-V4L2DevicePoller::V4L2DevicePoller(V4L2Device* const device, const std::string& threadName)
+V4L2DevicePoller::V4L2DevicePoller(V4L2Device* const device, const std::string& threadName,
+                                   scoped_refptr<base::SequencedTaskRunner> taskRunner)
       : mDevice(device),
         mPollThread(std::move(threadName)),
+        mClientTaskTunner(std::move(taskRunner)),
         mStopPolling(false) {}
 
 V4L2DevicePoller::~V4L2DevicePoller() {
@@ -42,7 +44,6 @@ bool V4L2DevicePoller::startPolling(EventCallback eventCallback,
 
     ALOGV("Starting polling");
 
-    mClientTaskTunner = base::SequencedTaskRunnerHandle::Get();
     mErrorCallback = errorCallback;
 
     if (!mPollThread.Start()) {
