@@ -130,6 +130,9 @@ V4L2Decoder::~V4L2Decoder() {
         mDevice->stopPolling();
         mDevice = nullptr;
     }
+    if (mInitialEosBuffer) {
+        mInitialEosBuffer = nullptr;
+    }
 }
 
 bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
@@ -274,7 +277,28 @@ bool V4L2Decoder::setupInitialOutput() {
         return false;
     }
 
-    if (!std::move(*eosBuffer).queueMMap()) {
+    mInitialEosBuffer =
+            new GraphicBuffer(mCodedSize.getWidth(), mCodedSize.getHeight(),
+                              static_cast<PixelFormat>(HalPixelFormat::YCBCR_420_888),
+                              GraphicBuffer::USAGE_HW_VIDEO_ENCODER, "V4L2DecodeComponent");
+
+    if (mInitialEosBuffer->initCheck() != NO_ERROR) {
+        return false;
+    }
+
+    std::vector<int> fds;
+    for (size_t i = 0; i < mInitialEosBuffer->handle->numFds; i++) {
+        fds.push_back(mInitialEosBuffer->handle->data[i]);
+    }
+
+    bool result;
+    if (eosBuffer->memory() == V4L2_MEMORY_MMAP) {
+        result = std::move(*eosBuffer).queueMMap();
+    } else {
+        result = std::move(*eosBuffer).queueDMABuf(fds);
+    }
+   
+    if (!result) {
         ALOGE("Failed to queue initial EOS buffer");
         return false;
     }
@@ -680,6 +704,10 @@ bool V4L2Decoder::dequeueResolutionChangeEvent() {
 bool V4L2Decoder::changeResolution() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+
+    if (mInitialEosBuffer) {
+        mInitialEosBuffer = nullptr;
+    }
 
     if (!startOutputQueue(mMinNumOutputBuffers, V4L2_MEMORY_DMABUF)) {
         ALOGE("Failed to start output queue during DRC.");
