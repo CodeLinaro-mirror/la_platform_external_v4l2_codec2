@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2Decoder"
 
@@ -27,11 +31,14 @@ constexpr size_t kNumInputBuffers = 16;
 // Extra buffers for transmitting in the whole video pipeline.
 constexpr size_t kNumExtraOutputBuffers = 4;
 
-// Currently we only support flexible pixel 420 format YCBCR_420_888 in Android.
-// Here is the list of flexible 420 format.
+/* For compatiblity with older Kernel versions, declare support for RGBX 32 bit format as RGB4.
+ * With Kernel versions prior to 5.2 it corresponds to the deprecated V4L2_PIX_FMT_RGB32 / RGB4
+ * fourcc format. Starting from Kernel version 5.2 it's replaced with V4L2_PIX_FMT_RGBX32 / XB24
+ * fourcc format. This behavior is aligned with virtio-video v4l2 driver.*/
 constexpr std::initializer_list<uint32_t> kSupportedOutputFourccs = {
         Fourcc::YU12, Fourcc::YV12, Fourcc::YM12, Fourcc::YM21,
         Fourcc::NV12, Fourcc::NV21, Fourcc::NM12, Fourcc::NM21,
+        Fourcc::RGB4,
 };
 
 uint32_t VideoCodecToV4L2PixFmt(VideoCodec codec) {
@@ -546,9 +553,15 @@ bool V4L2Decoder::changeResolution() {
     // Release the previous VideoFramePool before getting a new one to guarantee only one pool
     // exists at the same time.
     mVideoFramePool.reset();
-    // Always use flexible pixel 420 format YCBCR_420_888 in Android.
-    mVideoFramePool =
-            mGetPoolCb.Run(mCodedSize, HalPixelFormat::YCBCR_420_888, adjustedNumOutputBuffers);
+
+    if (adjustedFormat->fmt.pix_mp.pixelformat == V4L2_PIX_FMT_RGB32) {
+        mVideoFramePool = 
+			mGetPoolCb.Run(mCodedSize, HalPixelFormat::RGBX_8888, adjustedNumOutputBuffers);
+    } else {
+		mVideoFramePool =
+			mGetPoolCb.Run(mCodedSize, HalPixelFormat::YCBCR_420_888, adjustedNumOutputBuffers);
+    }
+
     if (!mVideoFramePool) {
         ALOGE("Failed to get block pool with size: %s", toString(mCodedSize).c_str());
         return false;

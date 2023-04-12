@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "VideoTypes"
 
@@ -93,6 +97,8 @@ const char* HalPixelFormatToString(HalPixelFormat format) {
         return "YV12";
     case HalPixelFormat::NV12:
         return "NV12";
+    case HalPixelFormat::RGBX_8888:
+        return "RGBX_8888";
     }
 }
 
