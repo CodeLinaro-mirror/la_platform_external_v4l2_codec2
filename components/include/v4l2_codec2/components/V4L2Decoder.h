@@ -103,6 +103,9 @@ private:
 
     std::queue<DecodeRequest> mDecodeRequests;
     std::map<int32_t, DecodeCB> mPendingDecodeCbs;
+    // Marks that we need to wait for DRC before drain can complete.
+    bool mPendingDRC = false;
+    VideoCodec mCodec;
 
     size_t mMinNumOutputBuffers = 0;
     GetPoolCB mGetPoolCb;

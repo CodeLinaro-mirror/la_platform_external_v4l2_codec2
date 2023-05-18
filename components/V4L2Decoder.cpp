@@ -24,6 +24,9 @@
 
 #include <v4l2_codec2/common/Common.h>
 #include <v4l2_codec2/common/Fourcc.h>
+#include <v4l2_codec2/common/H264NalParser.h>
+#include <v4l2_codec2/common/HEVCNalParser.h>
+#include <v4l2_codec2/plugin_store/DmabufHelpers.h>
 
 namespace android {
 namespace {
@@ -83,6 +86,36 @@ HalPixelFormat V4L2PixFmtToHalPixelFormat(uint32_t pixelFormat) {
     default:
         return HalPixelFormat::UNKNOWN;
     }
+}
+
+bool waitForDRC(const C2ConstLinearBlock& input, std::optional<VideoCodec> codec) {
+    C2ReadView view = input.map().get();
+    const uint8_t* pos = view.data();
+    // frame type takes the (2) position in first byte of VP9  uncompressed header
+    const uint8_t kVP9FrameTypeMask = 0x4;
+    // frame type takes the (0) position in first byte of VP8 uncompressed header
+    const uint8_t kVP8FrameTypeMask = 0x1;
+
+    switch (*codec) {
+    case VideoCodec::H264: {
+        H264NalParser parser(view.data(), view.capacity());
+        return parser.locateIDR();
+    }
+    case VideoCodec::HEVC: {
+        HEVCNalParser parser(view.data(), view.capacity());
+        return parser.locateIDR();
+    }
+    // For VP8 and VP9 it is assumed that the input buffer contains a single
+    // frame that is not fragmented.
+    case VideoCodec::VP9:
+        // 0 - key frame; 1 - interframe
+        return ((pos[0] & kVP9FrameTypeMask) == 0);
+    case VideoCodec::VP8:
+        // 0 - key frame; 1 - interframe;
+        return ((pos[0] & kVP8FrameTypeMask) == 0);
+    }
+
+    return false;
 }
 
 }  // namespace
@@ -148,6 +181,7 @@ bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
     mGetPoolCb = std::move(getPoolCb);
     mOutputCb = std::move(outputCb);
     mErrorCb = std::move(errorCb);
+    mCodec = codec;
 
     if (mState == State::Error) {
         ALOGE("Ignore due to error state.");
@@ -403,6 +437,8 @@ void V4L2Decoder::decode(std::unique_ptr<ConstBitstreamBuffer> buffer, DecodeCB 
         setState(State::Decoding);
     }
 
+    if (mInitialEosBuffer && !mPendingDRC) mPendingDRC = waitForDRC(buffer->dmabuf, mCodec);
+
     mDecodeRequests.push(DecodeRequest(std::move(buffer), std::move(decodeCb)));
     pumpDecodeRequest();
 }
@@ -458,9 +494,12 @@ void V4L2Decoder::pumpDecodeRequest() {
             // There is one more case that EOS frame cannot be dequeued because
             // the first resolution change event wasn't dequeued before - output
             // queues on the host are not streaming but ARCVM has no knowledge about
-            // it. Check if first resolution change event was received and finish
-            // drain now if it wasn't.
-            if (mInitialEosBuffer) {
+            // it. Check if first resolution change event was received and if there
+            // was no previously sent non-empty frame (other than SPS/PPS/EOS) that
+            // may trigger config from host side.
+            // Drain can only be finished if we are sure there was no stream = no
+            // single frame in the stack.
+            if (mInitialEosBuffer && !mPendingDRC) {
                 ALOGV("Terminate drain, because there was no stream");
                 mTaskRunner->PostTask(FROM_HERE, ::base::BindOnce(std::move(request.decodeCb),
                                                                   VideoDecoder::DecodeStatus::kOk));
