@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2Encoder"
 
@@ -308,7 +312,8 @@ void V4L2Encoder::handleEncodeRequest() {
         setState(State::WAITING_FOR_V4L2_BUFFER);
         return;
     }
-
+      
+    #ifdef FORCE_KEY_FRAME__FIXED
     // Request the next frame to be a key frame each time the counter reaches 0.
     if (mKeyFrameCounter == 0) {
         if (!mDevice->setExtCtrls(V4L2_CTRL_CLASS_MPEG,
@@ -318,6 +323,7 @@ void V4L2Encoder::handleEncodeRequest() {
             return;
         }
     }
+    #endif
     mKeyFrameCounter = (mKeyFrameCounter + 1) % mKeyFramePeriod;
 
     // Enqueue the input frame in the V4L2 device.
@@ -618,6 +624,7 @@ bool V4L2Encoder::configureH264(C2Config::profile_t outputProfile,
     // When encoding H.264 we want to prepend SPS and PPS to each IDR for resilience. Some
     // devices support this through the V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR control.
     // Otherwise we have to cache the latest SPS and PPS and inject these manually.
+    #ifdef V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR_IMPLEMENTED
     if (mDevice->isCtrlExposed(V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR)) {
         if (!mDevice->setExtCtrls(V4L2_CTRL_CLASS_MPEG,
                                   {V4L2ExtCtrl(V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR, 1)})) {
@@ -630,7 +637,11 @@ bool V4L2Encoder::configureH264(C2Config::profile_t outputProfile,
         mInjectParamsBeforeIDR = true;
         ALOGV("Device doesn't support prepending SPS and PPS to IDR, injecting manually.");
     }
-
+    
+    #else
+        mInjectParamsBeforeIDR = false;
+    #endif
+    
     std::vector<V4L2ExtCtrl> h264Ctrls;
 
     // No B-frames, for lowest decoding latency.
