@@ -36,6 +36,7 @@ enum class HalPixelFormat : int32_t {
     YV12 = static_cast<int32_t>(HPixelFormat::YV12),
     // NV12 is not defined at PixelFormat, follow the convention to use fourcc value.
     NV12 = 0x3231564e,
+    RGBX_8888 = static_cast<int32_t>(HPixelFormat::RGBX_8888),
 };
 const char* HalPixelFormatToString(HalPixelFormat format);
 
