@@ -15,6 +15,7 @@
 #include <base/bind.h>
 #include <base/files/scoped_file.h>
 #include <base/memory/ptr_util.h>
+#include <cutils/properties.h>
 #include <log/log.h>
 
 #include <v4l2_codec2/common/Common.h>
@@ -186,7 +187,14 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
     }
     ALOG_ASSERT(format->fmt.pix_mp.pixelformat == inputPixelFormat);
 
-    if (mInputQueue->allocateBuffers(kNumInputBuffers, V4L2_MEMORY_DMABUF) == 0) {
+    v4l2_memory memtype;
+    if (property_get_bool("ro.vendor.v42l_codec2.use_dmabuf_inputqueue", false)) {
+        memtype = V4L2_MEMORY_DMABUF;
+    } else {
+        memtype = V4L2_MEMORY_MMAP;
+    }
+
+    if (mInputQueue->allocateBuffers(kNumInputBuffers, memtype) == 0) {
         ALOGE("Failed to allocate input buffer.");
         return false;
     }
@@ -288,11 +296,21 @@ void V4L2Decoder::pumpDecodeRequest() {
 
         ALOGV("Set bytes_used=%zu, offset=%zu", request.buffer->offset + request.buffer->size,
               request.buffer->offset);
+
+        bool result;
+
         inputBuffer->setPlaneDataOffset(0, request.buffer->offset);
         inputBuffer->setPlaneBytesUsed(0, request.buffer->offset + request.buffer->size);
-        std::vector<int> fds;
-        fds.push_back(std::move(request.buffer->dmabuf.handle()->data[0]));
-        if (!std::move(*inputBuffer).queueDMABuf(fds)) {
+        if (inputBuffer->memory() == V4L2_MEMORY_MMAP) {
+            inputBuffer->fillBuffer(request.buffer->data, request.buffer->offset, request.buffer->size);
+            result = std::move(*inputBuffer).queueMMap();
+        } else {
+            std::vector<int> fds;
+            fds.push_back(std::move(request.buffer->dmabuf.handle()->data[0]));
+            result = std::move(*inputBuffer).queueDMABuf(fds);
+        }
+
+        if (!result) {
             ALOGE("%s(): Failed to QBUF to input queue, bitstreamId=%d", __func__, bitstreamId);
             onError();
             return;

@@ -83,6 +83,8 @@ public:
     // |plane|th plane. In case of error (invalid plane index or mapping failed), a nullptr is
     // returned.
     void* getPlaneMapping(const size_t plane);
+    // Fill v4l2buffer with data
+    bool fillBuffer(const uint8_t *data, const size_t offset, const size_t size);
     // Set the timestamp field for this buffer.
     void setTimeStamp(const struct timeval& timestamp);
     // Return the previously-set timestamp field for this buffer.

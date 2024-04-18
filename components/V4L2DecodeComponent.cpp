@@ -492,8 +492,9 @@ void V4L2DecodeComponent::pumpPendingWorks() {
                 }
             }
 
+            C2ReadView view = linearBlock.map().get();
             std::unique_ptr<ConstBitstreamBuffer> buffer = std::make_unique<ConstBitstreamBuffer>(
-                    bitstreamId, linearBlock, linearBlock.offset(), linearBlock.size());
+                    bitstreamId, linearBlock, linearBlock.offset(), linearBlock.size(), view.data());
             if (!buffer) {
                 reportError(C2_CORRUPTED);
                 return;
