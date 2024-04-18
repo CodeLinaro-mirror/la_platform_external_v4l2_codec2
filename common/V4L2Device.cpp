@@ -1253,6 +1253,12 @@ uint32_t V4L2Device::C2ProfileToV4L2PixFmt(C2Config::profile_t profile, bool sli
         } else {
             return V4L2_PIX_FMT_H264;
         }
+    } else if (profile >= C2Config::PROFILE_HEVC_MAIN && profile <= C2Config::PROFILE_HEVC_3D_MAIN) {
+        if (sliceBased) {
+            return V4L2_PIX_FMT_HEVC_SLICE;
+        } else {
+            return V4L2_PIX_FMT_HEVC;
+        }
     } else if (profile >= C2Config::PROFILE_VP8_0 && profile <= C2Config::PROFILE_VP8_3) {
         if (sliceBased) {
             return V4L2_PIX_FMT_VP8_FRAME;
@@ -1292,6 +1298,16 @@ C2Config::profile_t V4L2Device::v4L2ProfileToC2Profile(VideoCodec codec, uint32_
             return C2Config::PROFILE_AVC_EXTENDED;
         case V4L2_MPEG_VIDEO_H264_PROFILE_HIGH:
             return C2Config::PROFILE_AVC_HIGH;
+        }
+        break;
+    case VideoCodec::H265:
+        switch (profile) {
+        case V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN:
+            return C2Config::PROFILE_HEVC_MAIN;
+        case V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN_STILL_PICTURE:
+            return C2Config::PROFILE_HEVC_MAIN_STILL;
+        case V4L2_MPEG_VIDEO_HEVC_PROFILE_MAIN_10:
+            return C2Config::PROFILE_HEVC_MAIN_10;
         }
         break;
     case VideoCodec::VP8:
@@ -1343,6 +1359,9 @@ std::vector<C2Config::profile_t> V4L2Device::v4L2PixFmtToC2Profiles(uint32_t pix
         switch (codec) {
         case VideoCodec::H264:
             queryId = V4L2_CID_MPEG_VIDEO_H264_PROFILE;
+            break;
+        case VideoCodec::H265:
+            queryId = V4L2_CID_MPEG_VIDEO_HEVC_PROFILE;
             break;
         case VideoCodec::VP8:
             queryId = V4L2_CID_MPEG_VIDEO_VP8_PROFILE;

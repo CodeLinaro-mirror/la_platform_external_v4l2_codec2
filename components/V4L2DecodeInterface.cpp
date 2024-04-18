@@ -161,11 +161,24 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
 
     case VideoCodec::H265:
         inputMime = MEDIA_MIMETYPE_VIDEO_HEVC;
-        /* TODO: Set list of profiles */
         addParameter(DefineParam(mProfileLevel, C2_PARAMKEY_PROFILE_LEVEL)
-                             .withConstValue(new C2StreamProfileLevelInfo::input(
-                                     0u, C2Config::PROFILE_UNUSED, C2Config::LEVEL_UNUSED))
-                             .build());
+                        .withDefault(new C2StreamProfileLevelInfo::input(
+                                0u, C2Config::PROFILE_HEVC_MAIN, C2Config::LEVEL_HEVC_MAIN_5_1))
+                        .withFields({
+                                C2F(mProfileLevel, profile)
+                                        .oneOf({C2Config::PROFILE_HEVC_MAIN,
+                                                C2Config::PROFILE_HEVC_MAIN_STILL}),
+                                C2F(mProfileLevel, level)
+                                        .oneOf({C2Config::LEVEL_HEVC_MAIN_1,
+                                                C2Config::LEVEL_HEVC_MAIN_2, C2Config::LEVEL_HEVC_MAIN_2_1,
+                                                C2Config::LEVEL_HEVC_MAIN_3, C2Config::LEVEL_HEVC_MAIN_3_1,
+                                                C2Config::LEVEL_HEVC_MAIN_4, C2Config::LEVEL_HEVC_MAIN_4_1,
+                                                C2Config::LEVEL_HEVC_MAIN_5, C2Config::LEVEL_HEVC_MAIN_5_1,
+                                                C2Config::LEVEL_HEVC_MAIN_5_2, C2Config::LEVEL_HEVC_HIGH_4,
+                                                C2Config::LEVEL_HEVC_HIGH_4_1, C2Config::LEVEL_HEVC_HIGH_5,
+                                                C2Config::LEVEL_HEVC_HIGH_5_1, C2Config::LEVEL_HEVC_HIGH_5_2})})
+                        .withSetter(ProfileLevelSetter)
+                        .build());
         break;
 
     case VideoCodec::VP8:
