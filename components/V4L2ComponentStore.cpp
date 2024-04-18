@@ -29,6 +29,9 @@ std::string getMediaTypeFromComponentName(const std::string& name) {
         name == V4L2ComponentName::kH264Encoder) {
         return MEDIA_MIMETYPE_VIDEO_AVC;
     }
+    if (name == V4L2ComponentName::kH265Decoder) {
+        return MEDIA_MIMETYPE_VIDEO_HEVC;
+    }
     if (name == V4L2ComponentName::kVP8Decoder || name == V4L2ComponentName::kVP8SecureDecoder ||
         name == V4L2ComponentName::kVP8Encoder) {
         return MEDIA_MIMETYPE_VIDEO_VP8;
