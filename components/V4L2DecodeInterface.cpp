@@ -227,6 +227,12 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                          .withConstValue(
                                  new C2StreamBufferTypeSetting::output(0u, C2BufferData::GRAPHIC))
                          .build());
+
+    addParameter(
+            DefineParam(mInputDelay, C2_PARAMKEY_INPUT_DELAY)
+                    .withConstValue(new C2PortDelayTuning::input(4u))
+                    .build());
+
     addParameter(
             DefineParam(mOutputDelay, C2_PARAMKEY_OUTPUT_DELAY)
                     .withConstValue(new C2PortDelayTuning::output(getOutputDelay(*mVideoCodec)))

@@ -62,6 +62,9 @@ private:
     std::shared_ptr<C2PortMediaTypeSetting::input> mInputMediaType;
     // The MIME type of output port; should be MEDIA_MIMETYPE_VIDEO_RAW.
     std::shared_ptr<C2PortMediaTypeSetting::output> mOutputMediaType;
+    // The number of additional input frames that might need to be queued before the first
+    // output buffer can be released by the decoder.
+    std::shared_ptr<C2PortDelayTuning::input> mInputDelay;
     // The number of additional output frames that might need to be generated before an output
     // buffer can be released by the component; only used for H264 because H264 may reorder the
     // output frames.
