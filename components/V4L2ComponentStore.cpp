@@ -114,6 +114,7 @@ std::vector<std::shared_ptr<const C2Component::Traits>> V4L2ComponentStore::list
     std::vector<std::shared_ptr<const C2Component::Traits>> ret;
     ret.push_back(GetTraits(V4L2ComponentName::kH264Encoder));
     ret.push_back(GetTraits(V4L2ComponentName::kH264Decoder));
+    ret.push_back(GetTraits(V4L2ComponentName::kH265Decoder));
     ret.push_back(GetTraits(V4L2ComponentName::kH264SecureDecoder));
     ret.push_back(GetTraits(V4L2ComponentName::kVP8Encoder));
     ret.push_back(GetTraits(V4L2ComponentName::kVP8Decoder));

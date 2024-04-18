@@ -143,6 +143,17 @@ Add decode and encode components in media\_codecs\_c2.xml
            <Feature name="adaptive-playback" />
        </MediaCodec>
 
+       <MediaCodec name="c2.v4l2.hevc.decoder" type="video/hevc" >
+           <Limit name="size" min="16x16" max="4096x4096" />
+           <Limit name="alignment" value="2x2" />
+           <Limit name="block-size" value="16x16" />
+           <Limit name="blocks-per-second" min="1" max="1879200" />
+           <Limit name="bitrate" range="1-62500000" />
+           <Limit name="concurrent-instances" max="8" />
+           <Limit name="performance-point-3840x2160" range="30-30" />
+           <Feature name="adaptive-playback" />
+       </MediaCodec>
+
        <MediaCodec name="c2.v4l2.vp8.decoder" type="video/x-vnd.on2.vp8" >
            <Limit name="size" min="16x16" max="4096x4096" />
            <Limit name="alignment" value="2x2" />

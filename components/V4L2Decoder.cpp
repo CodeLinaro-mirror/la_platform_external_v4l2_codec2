@@ -42,6 +42,8 @@ uint32_t VideoCodecToV4L2PixFmt(VideoCodec codec) {
     switch (codec) {
     case VideoCodec::H264:
         return V4L2_PIX_FMT_H264;
+    case VideoCodec::H265:
+        return V4L2_PIX_FMT_HEVC;
     case VideoCodec::VP8:
         return V4L2_PIX_FMT_VP8;
     case VideoCodec::VP9:

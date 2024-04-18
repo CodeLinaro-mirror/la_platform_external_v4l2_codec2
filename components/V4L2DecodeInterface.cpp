@@ -30,6 +30,8 @@ constexpr size_t kInputBufferSizeFor4K = 4 * kInputBufferSizeFor1080p;
 std::optional<VideoCodec> getCodecFromComponentName(const std::string& name) {
     if (name == V4L2ComponentName::kH264Decoder || name == V4L2ComponentName::kH264SecureDecoder)
         return VideoCodec::H264;
+    if (name == V4L2ComponentName::kH265Decoder)
+        return VideoCodec::H265;
     if (name == V4L2ComponentName::kVP8Decoder || name == V4L2ComponentName::kVP8SecureDecoder)
         return VideoCodec::VP8;
     if (name == V4L2ComponentName::kVP9Decoder || name == V4L2ComponentName::kVP9SecureDecoder)
@@ -155,6 +157,15 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                                                  C2Config::LEVEL_AVC_5_2})})
                         .withSetter(ProfileLevelSetter)
                         .build());
+        break;
+
+    case VideoCodec::H265:
+        inputMime = MEDIA_MIMETYPE_VIDEO_HEVC;
+        /* TODO: Set list of profiles */
+        addParameter(DefineParam(mProfileLevel, C2_PARAMKEY_PROFILE_LEVEL)
+                             .withConstValue(new C2StreamProfileLevelInfo::input(
+                                     0u, C2Config::PROFILE_UNUSED, C2Config::LEVEL_UNUSED))
+                             .build());
         break;
 
     case VideoCodec::VP8:
@@ -378,6 +389,7 @@ c2_status_t V4L2DecodeInterface::queryColorAspects(
 uint32_t V4L2DecodeInterface::getOutputDelay(VideoCodec codec) {
     switch (codec) {
     case VideoCodec::H264:
+    case VideoCodec::H265:
         // Due to frame reordering an H264 decoder might need multiple additional input frames to be
         // queued before being able to output the associated decoded buffers. We need to tell the
         // codec2 framework that it should not stop queuing new work items until the maximum number
