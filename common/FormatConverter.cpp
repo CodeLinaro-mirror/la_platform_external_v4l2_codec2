@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "FormatConverter"
 
@@ -184,7 +188,7 @@ C2ConstGraphicBlock FormatConverter::convertBlock(uint64_t frameIndex,
             *status = C2_CORRUPTED;
             return inputBlock;  // This is actually redundant and should not be used.
         }
-        inputLayout.type = C2PlanarLayout::TYPE_RGB;
+        inputLayout.type = C2PlanarLayout::TYPE_RGBA;
     }
 
     C2GraphicView outputView = outputBlock->map().get();
@@ -256,7 +260,7 @@ C2ConstGraphicBlock FormatConverter::convertBlock(uint64_t frameIndex,
             *status = C2_CORRUPTED;
             return inputBlock;  // This is actually redundant and should not be used.
         }
-    } else if (inputLayout.type == C2PlanarLayout::TYPE_RGB) {
+    } else if (inputLayout.type == C2PlanarLayout::TYPE_RGBA) {
         // There is only RGBA_8888 specified in C2AllocationGralloc::map(), no BGRA_8888. Maybe
         // BGRA_8888 is not used now?
         inputFormat = VideoPixelFormat::ABGR;
