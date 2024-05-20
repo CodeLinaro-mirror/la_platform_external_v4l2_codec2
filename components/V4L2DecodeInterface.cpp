@@ -360,6 +360,19 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                                      .inRange(C2Color::MATRIX_UNSPECIFIED, C2Color::MATRIX_OTHER)})
                     .withSetter(MergedColorAspectsSetter, mDefaultColorAspects, mCodedColorAspects)
                     .build());
+
+    // Currently we support two output pixel formats:
+    // RGBX_8888 - default for this platform
+    // YCBCR_420_888 - required by Android testing tools - the RGB->YUV420 conversion is required
+    std::vector<uint32_t> pixelFormats = {static_cast<uint32_t> (HalPixelFormat::RGBX_8888), 
+                                         static_cast<uint32_t> (HalPixelFormat::YCBCR_420_888)};
+    addParameter(
+                DefineParam(mPixelFormat, C2_PARAMKEY_PIXEL_FORMAT)
+                .withDefault(new C2StreamPixelFormatInfo::output(
+                                0u, static_cast<uint32_t> (HalPixelFormat::RGBX_8888)))
+                .withFields({C2F(mPixelFormat, value).oneOf(pixelFormats)})
+                .withSetter((Setter<decltype(*mPixelFormat)>::StrictValueWithNoDeps))
+                .build());
 }
 
 size_t V4L2DecodeInterface::getInputBufferSize() const {

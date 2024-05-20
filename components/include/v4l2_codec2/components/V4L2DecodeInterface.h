@@ -38,6 +38,9 @@ public:
     c2_status_t queryColorAspects(
             std::shared_ptr<C2StreamColorAspectsInfo::output>* targetColorAspects);
 
+    // Get the current value of output pixel format requested by client.
+   HalPixelFormat getOutputPixelFormat() const { return static_cast<HalPixelFormat> (mPixelFormat->value); }
+
 private:
     // Configurable parameter setters.
     static C2R ProfileLevelSetter(bool mayBlock, C2P<C2StreamProfileLevelInfo::input>& info);
@@ -100,6 +103,8 @@ private:
     // former has higher priority. This parameter is used for component to provide color aspects
     // as C2Info in decoded output buffers.
     std::shared_ptr<C2StreamColorAspectsInfo::output> mColorAspects;
+    // The default requested output pixel format. This parameter should be configured by client.
+    std::shared_ptr<C2StreamPixelFormatInfo::output> mPixelFormat;
 
     c2_status_t mInitStatus;
     std::optional<VideoCodec> mVideoCodec;
