@@ -60,12 +60,13 @@ uint32_t VideoCodecToV4L2PixFmt(VideoCodec codec) {
 // static
 std::unique_ptr<VideoDecoder> V4L2Decoder::Create(
         const VideoCodec& codec, const size_t inputBufferSize, const size_t minNumOutputBuffers,
+        const HalPixelFormat outputPixelFormat,
         GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb,
         scoped_refptr<::base::SequencedTaskRunner> taskRunner) {
     std::unique_ptr<V4L2Decoder> decoder =
             ::base::WrapUnique<V4L2Decoder>(new V4L2Decoder(taskRunner));
-    if (!decoder->start(codec, inputBufferSize, minNumOutputBuffers, std::move(getPoolCb),
-                        std::move(outputCb), std::move(errorCb))) {
+    if (!decoder->start(codec, inputBufferSize, minNumOutputBuffers, outputPixelFormat,
+                        std::move(getPoolCb), std::move(outputCb), std::move(errorCb))) {
         return nullptr;
     }
     return decoder;
@@ -102,13 +103,15 @@ V4L2Decoder::~V4L2Decoder() {
 }
 
 bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
-                        const size_t minNumOutputBuffers, GetPoolCB getPoolCb, OutputCB outputCb,
+                        const size_t minNumOutputBuffers, const HalPixelFormat outputPixelFormat,
+                        GetPoolCB getPoolCb, OutputCB outputCb,
                         ErrorCB errorCb) {
     ALOGV("%s(codec=%s, inputBufferSize=%zu, minNumOutputBuffers=%zu)", __func__,
           VideoCodecToString(codec), inputBufferSize, minNumOutputBuffers);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
     mMinNumOutputBuffers = minNumOutputBuffers;
+    mOutputPixelFormat = outputPixelFormat;
     mGetPoolCb = std::move(getPoolCb);
     mOutputCb = std::move(outputCb);
     mErrorCb = std::move(errorCb);

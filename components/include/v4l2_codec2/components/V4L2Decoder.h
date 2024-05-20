@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_COMPONENTS_V4L2_DECODER_H
 #define ANDROID_V4L2_CODEC2_COMPONENTS_V4L2_DECODER_H
 
@@ -26,7 +30,8 @@ namespace android {
 class V4L2Decoder : public VideoDecoder {
 public:
     static std::unique_ptr<VideoDecoder> Create(
-            const VideoCodec& codec, const size_t inputBufferSize, const size_t minNumOutputBuffers,
+            const VideoCodec& codec, const size_t inputBufferSize, const size_t minNumOutputBuffers, 
+            const HalPixelFormat outputPixelFormat,
             GetPoolCB getPoolCB, OutputCB outputCb, ErrorCB errorCb,
             scoped_refptr<::base::SequencedTaskRunner> taskRunner);
     ~V4L2Decoder() override;
@@ -56,8 +61,8 @@ private:
 
     V4L2Decoder(scoped_refptr<::base::SequencedTaskRunner> taskRunner);
     bool start(const VideoCodec& codec, const size_t inputBufferSize,
-               const size_t minNumOutputBuffers, GetPoolCB getPoolCb, OutputCB outputCb,
-               ErrorCB errorCb);
+               const size_t minNumOutputBuffers, const HalPixelFormat outputPixelFormat,
+               GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb);
     bool setupInputFormat(const uint32_t inputPixelFormat, const size_t inputBufferSize);
     void pumpDecodeRequest();
 
@@ -94,6 +99,8 @@ private:
 
     ui::Size mCodedSize;
     Rect mVisibleRect;
+
+    HalPixelFormat mOutputPixelFormat;
 
     std::map<size_t, std::unique_ptr<VideoFrame>> mFrameAtDevice;
 
