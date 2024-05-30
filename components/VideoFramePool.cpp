@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "VideoFramePool"
 
@@ -208,6 +212,7 @@ void VideoFramePool::getVideoFrameTask() {
     std::optional<FrameWithBlockId> frameWithBlockId;
     if (err == C2_OK) {
         ALOG_ASSERT(block != nullptr);
+        block->map();
         std::optional<uint32_t> bufferId = getBufferIdFromGraphicBlock(*mBlockPool, *block);
         std::unique_ptr<VideoFrame> frame = VideoFrame::Create(std::move(block));
         // Only pass the frame + id pair if both have successfully been obtained.
