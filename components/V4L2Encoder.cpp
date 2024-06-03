@@ -18,6 +18,7 @@
 #include <base/bind.h>
 #include <base/files/scoped_file.h>
 #include <base/memory/ptr_util.h>
+#include <cutils/properties.h>
 #include <log/log.h>
 #include <ui/Rect.h>
 
@@ -791,8 +792,18 @@ bool V4L2Encoder::enqueueInputBuffer(std::unique_ptr<InputFrame> frame) {
         buffer->setPlaneBytesUsed(i, bytesUsed);
     }
 
-    if (!std::move(*buffer).queueDMABuf(frame->fds())) {
-        ALOGE("Failed to queue input buffer using QueueDMABuf");
+    bool result;
+    std::string queueMemType;
+    if (buffer->memory() == V4L2_MEMORY_MMAP) {
+        result = std::move(*buffer).queueMMap();
+        queueMemType = "QueueMMap";
+    } else {
+        result = std::move(*buffer).queueDMABuf(frame->fds());
+        queueMemType = "QueueDMABuf";
+    }
+
+    if (!result) {
+        ALOGE("Failed to queue input buffer using %s", queueMemType.c_str());
         onError();
         return false;
     }
@@ -827,12 +838,25 @@ bool V4L2Encoder::enqueueOutputBuffer() {
         return false;
     }
 
+//TODO
     size_t bufferId = buffer->bufferId();
 
-    std::vector<int> fds;
-    fds.push_back(bitstreamBuffer->dmabuf->handle()->data[0]);
-    if (!std::move(*buffer).queueDMABuf(fds)) {
-        ALOGE("Failed to queue output buffer using QueueDMABuf");
+    bool result;
+    std::string queueMemType;
+
+    if (buffer->memory() == V4L2_MEMORY_MMAP) {
+        result = std::move(*buffer).queueMMap();
+        queueMemType = "QueueMMap";
+    } else {
+        std::vector<int> fds;
+        fds.push_back(bitstreamBuffer->dmabuf->handle()->data[0]);
+
+        result = std::move(*buffer).queueDMABuf(fds);
+        queueMemType = "QueueDMABuf";
+    }
+
+    if (!result) {
+        ALOGE("Failed to queue output buffer using %s", queueMemType.c_str());
         onError();
         return false;
     }
@@ -1001,7 +1025,14 @@ bool V4L2Encoder::createInputBuffers() {
 
     // No memory is allocated here, we just generate a list of buffers on the input queue, which
     // will hold memory handles to the real buffers.
-    if (mInputQueue->allocateBuffers(kInputBufferCount, V4L2_MEMORY_DMABUF) < kInputBufferCount) {
+    v4l2_memory memtype;
+    if (property_get_bool("ro.vendor.v4l2_codec2.use_dmabuf_inputqueue", false)) {
+        memtype = V4L2_MEMORY_DMABUF;
+    } else {
+        memtype = V4L2_MEMORY_MMAP;
+    }
+
+    if (mInputQueue->allocateBuffers(kInputBufferCount, memtype) < kInputBufferCount) {
         ALOGE("Failed to create V4L2 input buffers.");
         return false;
     }
@@ -1016,9 +1047,17 @@ bool V4L2Encoder::createOutputBuffers() {
     ALOG_ASSERT(!mOutputQueue->isStreaming());
     ALOG_ASSERT(mOutputBuffers.empty());
 
+    v4l2_memory memtype;
+
     // No memory is allocated here, we just generate a list of buffers on the output queue, which
     // will hold memory handles to the real buffers.
-    if (mOutputQueue->allocateBuffers(kOutputBufferCount, V4L2_MEMORY_DMABUF) <
+    if (property_get_bool("ro.vendor.v4l2_codec2.use_dmabuf_outputqueue", false)) {
+        memtype = V4L2_MEMORY_DMABUF;
+    } else {
+        memtype = V4L2_MEMORY_MMAP;
+    }
+
+    if (mOutputQueue->allocateBuffers(kOutputBufferCount, memtype) <
         kOutputBufferCount) {
         ALOGE("Failed to create V4L2 output buffers.");
         return false;
