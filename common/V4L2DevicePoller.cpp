@@ -3,6 +3,10 @@
 // found in the LICENSE file.
 // Note: ported from Chromium commit head: 22d34680c8ac
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #include <v4l2_codec2/common/V4L2DevicePoller.h>
 
 #include <string>
@@ -24,7 +28,7 @@ V4L2DevicePoller::V4L2DevicePoller(V4L2Device* const device, const std::string& 
         mStopPolling(false) {}
 
 V4L2DevicePoller::~V4L2DevicePoller() {
-    ALOG_ASSERT(mClientTaskTunner->RunsTasksInCurrentSequence());
+    ALOG_ASSERT(!mClientTaskTunner || mClientTaskTunner->RunsTasksInCurrentSequence());
 
     stopPolling();
 }
@@ -86,7 +90,7 @@ bool V4L2DevicePoller::stopPolling() {
 }
 
 bool V4L2DevicePoller::isPolling() const {
-    ALOG_ASSERT(mClientTaskTunner->RunsTasksInCurrentSequence());
+    ALOG_ASSERT(!mClientTaskTunner || mClientTaskTunner->RunsTasksInCurrentSequence());
 
     return mPollThread.IsRunning();
 }
@@ -103,8 +107,6 @@ void V4L2DevicePoller::schedulePoll() {
 }
 
 void V4L2DevicePoller::devicePollTask() {
-    ALOG_ASSERT(mClientTaskTunner->RunsTasksInCurrentSequence());
-
     while (true) {
         ALOGV("Waiting for poll to be scheduled.");
         mTriggerPoll.Wait();
