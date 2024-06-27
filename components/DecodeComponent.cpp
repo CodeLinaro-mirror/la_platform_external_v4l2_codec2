@@ -359,15 +359,6 @@ void DecodeComponent::queueTask(std::unique_ptr<C2Work> work) {
     work->worklets.front()->output.buffers.clear();
     work->worklets.front()->output.ordinal = work->input.ordinal;
     if (work->input.buffers.empty()) {
-        // Client may queue a work with no input buffer for either it's EOS or empty CSD, otherwise
-        // every work must have one input buffer.
-        if ((work->input.flags & C2FrameData::FLAG_END_OF_STREAM) == 0 &&
-            (work->input.flags & C2FrameData::FLAG_CODEC_CONFIG) == 0) {
-            ALOGE("Invalid work: work with no input buffer should be EOS or CSD.");
-            reportError(C2_BAD_VALUE);
-            return;
-        }
-
         // Emplace a nullptr to unify the check for work done.
         ALOGV("Got a work with no input buffer! Emplace a nullptr inside.");
         work->input.buffers.emplace_back(nullptr);
