@@ -36,6 +36,9 @@ namespace {
 // Extra buffers for transmitting in the whole video pipeline.
 constexpr size_t kNumExtraOutputBuffers = 4;
 
+constexpr size_t kMinimumSupportedWidth = 96;
+constexpr size_t kMinimumSupportedHeight = 96;
+
 bool waitForDRC(const C2ConstLinearBlock& input, std::optional<VideoCodec> codec) {
     C2ReadView view = input.map().get();
     const uint8_t* pos = view.data();
@@ -234,7 +237,8 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
     }
 
     // Setup the input format.
-    auto format = mInputQueue->setFormat(inputPixelFormat, ui::Size(), inputBufferSize, 0);
+    // Allocate of initial buffers with minimum supported dimension, to avoid the issue with buffer allocation by the kernel due to size constraints.
+    auto format = mInputQueue->setFormat(inputPixelFormat, ui::Size(kMinimumSupportedWidth, kMinimumSupportedHeight), inputBufferSize, 0);
     if (!format) {
         ALOGE("Failed to call IOCTL to set input format.");
         return false;
@@ -329,7 +333,7 @@ bool V4L2Decoder::setupMinimalOutputFormat() {
 
         mDevice->getSupportedResolution(pixfmt, &minResolution, &maxResolution);
         if (minResolution.isEmpty()) {
-            minResolution.set(128, 128);
+            minResolution.set(kMinimumSupportedWidth, kMinimumSupportedHeight);
         }
 
         if (mOutputQueue->setFormat(pixfmt, minResolution, 0) != std::nullopt) {
