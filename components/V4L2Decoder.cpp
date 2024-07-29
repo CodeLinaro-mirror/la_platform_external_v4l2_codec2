@@ -32,6 +32,9 @@ constexpr size_t kNumInputBuffers = 16;
 // Extra buffers for transmitting in the whole video pipeline.
 constexpr size_t kNumExtraOutputBuffers = 4;
 
+constexpr size_t kMinimumSupportedWidth = 96;
+constexpr size_t kMinimumSupportedHeight = 96;
+
 /* For compatiblity with older Kernel versions, declare support for RGBX 32 bit format as RGB4.
  * With Kernel versions prior to 5.2 it corresponds to the deprecated V4L2_PIX_FMT_RGB32 / RGB4
  * fourcc format. Starting from Kernel version 5.2 it's replaced with V4L2_PIX_FMT_RGBX32 / XB24
@@ -214,7 +217,8 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
     }
 
     // Setup the input format.
-    auto format = mInputQueue->setFormat(inputPixelFormat, ui::Size(), inputBufferSize, 0);
+    // Allocate of initial buffers with minimum supported dimension, to avoid the issue with buffer allocation by the kernel due to size constraints.
+    auto format = mInputQueue->setFormat(inputPixelFormat, ui::Size(kMinimumSupportedWidth, kMinimumSupportedHeight), inputBufferSize, 0);
     if (!format) {
         ALOGE("Failed to call IOCTL to set input format.");
         return false;
