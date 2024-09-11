@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2ComponentStore"
 
@@ -115,10 +119,8 @@ std::vector<std::shared_ptr<const C2Component::Traits>> V4L2ComponentStore::list
     ret.push_back(GetTraits(V4L2ComponentName::kH264Encoder));
     ret.push_back(GetTraits(V4L2ComponentName::kH264Decoder));
     ret.push_back(GetTraits(V4L2ComponentName::kH264SecureDecoder));
-    ret.push_back(GetTraits(V4L2ComponentName::kVP8Encoder));
     ret.push_back(GetTraits(V4L2ComponentName::kVP8Decoder));
     ret.push_back(GetTraits(V4L2ComponentName::kVP8SecureDecoder));
-    ret.push_back(GetTraits(V4L2ComponentName::kVP9Encoder));
     ret.push_back(GetTraits(V4L2ComponentName::kVP9Decoder));
     ret.push_back(GetTraits(V4L2ComponentName::kVP9SecureDecoder));
     ret.push_back(GetTraits(V4L2ComponentName::kHEVCDecoder));
