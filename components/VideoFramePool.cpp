@@ -52,7 +52,7 @@ std::optional<uint32_t> VideoFramePool::getBufferIdFromGraphicBlock(C2BlockPool&
     case V4L2AllocatorId::SECURE_LINEAR: {
         std::shared_ptr<_C2BlockPoolData> blockPoolData =
                 _C2BlockFactory::GetGraphicBlockPoolData(block);
-        if (blockPoolData->getType() != _C2BlockPoolData::TYPE_BUFFERPOOL) {
+        if (!blockPoolData || blockPoolData->getType() != _C2BlockPoolData::TYPE_BUFFERPOOL) {
             ALOGE("Obtained C2GraphicBlock is not bufferpool-backed.");
             return std::nullopt;
         }
