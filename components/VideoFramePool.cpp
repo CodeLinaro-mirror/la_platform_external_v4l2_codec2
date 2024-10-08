@@ -118,6 +118,8 @@ bool VideoFramePool::initialize() {
     mClientWeakThis = mClientWeakThisFactory.GetWeakPtr();
     mFetchWeakThis = mFetchWeakThisFactory.GetWeakPtr();
 
+    mBufferIdCount = 0;
+
     return true;
 }
 
@@ -213,7 +215,12 @@ void VideoFramePool::getVideoFrameTask() {
 
     std::optional<uint32_t> bufferId;
     if (err == C2_OK) {
-        bufferId = getBufferIdFromGraphicBlock(*mBlockPool, *block);
+        if (mBlockPool->getLocalId() < C2BlockPool::PLATFORM_START) {
+            bufferId.emplace(mBufferIdCount);
+            mBufferIdCount = (mBufferIdCount + 1) % mMaxBufferCount;
+        } else {
+            bufferId = getBufferIdFromGraphicBlock(*mBlockPool, *block);
+        }
 
         if (bufferId) {
             ALOGV("%s(): Got buffer with id = %u", __func__, *bufferId);
