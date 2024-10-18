@@ -288,7 +288,7 @@ bool V4L2Encoder::initialize(C2Config::profile_t outputProfile, std::optional<ui
 void V4L2Encoder::handleEncodeRequest() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
-    ALOG_ASSERT(mState == State::ENCODING || mState == State::ERROR);
+    ALOG_ASSERT(mState == State::ENCODING || mState == State::ERROR || mState == State::WAITING_FOR_INPUT_FRAME);
 
     // If we're in the error state we can immediately return.
     if (mState == State::ERROR) {
