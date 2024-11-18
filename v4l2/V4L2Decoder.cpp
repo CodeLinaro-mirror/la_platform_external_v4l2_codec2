@@ -592,10 +592,6 @@ void V4L2Decoder::flush() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
-    if (mState == State::Idle) {
-        ALOGV("Nothing need to flush, ignore.");
-        return;
-    }
     if (mState == State::Error) {
         ALOGE("Ignore due to error state.");
         return;
