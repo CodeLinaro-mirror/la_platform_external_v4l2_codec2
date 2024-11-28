@@ -1,3 +1,7 @@
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 package {
     // See: http://go/android-license-faq
     // A large-scale-change added 'default_applicable_licenses' to import
@@ -33,7 +37,7 @@ cc_binary {
 
     required: ["android.hardware.media.c2@1.2-default-seccomp_policy"],
 
-    compile_multilib: "both",
+    compile_multilib: "64",
     multilib: {
         lib32: {
             suffix: "-32",
