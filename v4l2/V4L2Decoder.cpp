@@ -696,7 +696,7 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
     }
 
     bool outputDequeued = false;
-    while (mOutputQueue->queuedBuffersCount() > 0) {
+    while ((mOutputQueue->queuedBuffersCount() > 0) && mVideoFramePool) {
         bool success;
         V4L2ReadableBufferRef dequeuedBuffer;
         std::tie(success, dequeuedBuffer) = mOutputQueue->dequeueBuffer();
