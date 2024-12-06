@@ -160,7 +160,7 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                                                  C2Config::LEVEL_AVC_3_2, C2Config::LEVEL_AVC_4,
                                                  C2Config::LEVEL_AVC_4_1, C2Config::LEVEL_AVC_4_2,
                                                  C2Config::LEVEL_AVC_5, C2Config::LEVEL_AVC_5_1,
-                                                 C2Config::LEVEL_AVC_5_2})})
+                                                 C2Config::LEVEL_AVC_5_2, C2Config::LEVEL_AVC_6})})
                         .withSetter(ProfileLevelSetter)
                         .build());
         break;
