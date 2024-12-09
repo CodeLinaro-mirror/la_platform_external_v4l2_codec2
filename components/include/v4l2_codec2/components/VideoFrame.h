@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_COMPONENTS_VIDEO_FRAME_H
 #define ANDROID_V4L2_CODEC2_COMPONENTS_VIDEO_FRAME_H
 
@@ -34,6 +38,9 @@ public:
 
     // Get the read-only C2GraphicBlock, should be called after calling setVisibleRect().
     C2ConstGraphicBlock getGraphicBlock();
+
+    // Invocate writable map() to trigger TRANSFER_TO_HOST command.
+    void sync();
 
 private:
     VideoFrame(std::shared_ptr<C2GraphicBlock> block, std::vector<int> fds);
