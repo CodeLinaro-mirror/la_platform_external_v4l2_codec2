@@ -1049,7 +1049,7 @@ bool V4L2Encoder::createInputBuffers() {
     // No memory is allocated here, we just generate a list of buffers on the input queue, which
     // will hold memory handles to the real buffers.
     v4l2_memory memtype;
-    if (property_get_bool("ro.vendor.v4l2_codec2.use_dmabuf_inputqueue", false)) {
+    if (property_get_bool("ro.vendor.v4l2_codec2.encoder.use_dmabuf_inputqueue", true)) {
         memtype = V4L2_MEMORY_DMABUF;
     } else {
         memtype = V4L2_MEMORY_MMAP;
@@ -1074,7 +1074,7 @@ bool V4L2Encoder::createOutputBuffers() {
 
     // No memory is allocated here, we just generate a list of buffers on the output queue, which
     // will hold memory handles to the real buffers.
-    if (property_get_bool("ro.vendor.v4l2_codec2.use_dmabuf_outputqueue", false)) {
+    if (property_get_bool("ro.vendor.v4l2_codec2.encoder.use_dmabuf_outputqueue", true)) {
         memtype = V4L2_MEMORY_DMABUF;
     } else {
         memtype = V4L2_MEMORY_MMAP;

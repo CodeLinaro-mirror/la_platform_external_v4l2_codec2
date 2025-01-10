@@ -268,7 +268,7 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
     ALOG_ASSERT(format->fmt.pix_mp.pixelformat == inputPixelFormat);
 
     v4l2_memory memtype;
-    if (property_get_bool("ro.vendor.v4l2_codec2.use_dmabuf_inputqueue", false)) {
+    if (property_get_bool("ro.vendor.v4l2_codec2.decoder.use_dmabuf_inputqueue", true)) {
         memtype = V4L2_MEMORY_DMABUF;
     } else {
         memtype = V4L2_MEMORY_MMAP;
@@ -295,7 +295,7 @@ bool V4L2Decoder::setupInitialOutput() {
     }
 
     v4l2_memory memtype;
-    if (property_get_bool("ro.vendor.v4l2_codec2.use_dmabuf_outputqueue", false)) {
+    if (property_get_bool("ro.vendor.v4l2_codec2.decoder.use_dmabuf_outputqueue", true)) {
         memtype = V4L2_MEMORY_DMABUF;
     } else {
         memtype = V4L2_MEMORY_MMAP;
