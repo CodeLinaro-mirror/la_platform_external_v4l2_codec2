@@ -313,8 +313,7 @@ void V4L2Encoder::handleEncodeRequest() {
         setState(State::WAITING_FOR_V4L2_BUFFER);
         return;
     }
-      
-    #ifdef FORCE_KEY_FRAME__FIXED
+
     // Request the next frame to be a key frame each time the counter reaches 0.
     if (mKeyFrameCounter == 0) {
         if (!mDevice->setExtCtrls(V4L2_CTRL_CLASS_MPEG,
@@ -324,7 +323,6 @@ void V4L2Encoder::handleEncodeRequest() {
             return;
         }
     }
-    #endif
     mKeyFrameCounter = (mKeyFrameCounter + 1) % mKeyFramePeriod;
 
     // Enqueue the input frame in the V4L2 device.
