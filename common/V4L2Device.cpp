@@ -642,6 +642,13 @@ V4L2ReadableBuffer::~V4L2ReadableBuffer() {
     ALOG_ASSERT(mBufferData);
 }
 
+enum v4l2_memory V4L2ReadableBuffer::memory() const {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(mSequenceChecker);
+    ALOG_ASSERT(mBufferData);
+
+    return static_cast<enum v4l2_memory>(mBufferData->mV4l2Buffer.memory);
+}
+
 bool V4L2ReadableBuffer::isLast() const {
     DCHECK_CALLED_ON_VALID_SEQUENCE(mSequenceChecker);
     ALOG_ASSERT(mBufferData);

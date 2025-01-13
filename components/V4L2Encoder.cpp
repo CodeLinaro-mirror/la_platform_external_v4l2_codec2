@@ -965,6 +965,15 @@ bool V4L2Encoder::dequeueOutputBuffer() {
 
     std::unique_ptr<BitstreamBuffer> bitstreamBuffer =
             std::move(mOutputBuffers[buffer->bufferId()]);
+
+
+    if (buffer->memory() == V4L2_MEMORY_MMAP) {
+        C2WriteView writeView = bitstreamBuffer->dmabuf->map().get();
+        size_t write_offset =  buffer->getPlaneDataOffset(0);
+        ALOG_ASSERT(writeView.size() - write_offset >= encodedDataSize);
+        memcpy(writeView.data() + write_offset, buffer->getPlaneMapping(0), encodedDataSize);
+    }
+
     if (encodedDataSize > 0) {
         if (!mInjectParamsBeforeIDR) {
             // No need to inject SPS or PPS before IDR frames, we can just return the buffer as-is.
