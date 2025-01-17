@@ -314,7 +314,7 @@ bool V4L2Decoder::setupInitialOutput() {
 
     mInitialEosBuffer =
             new GraphicBuffer(mCodedSize.getWidth(), mCodedSize.getHeight(),
-                              static_cast<PixelFormat>(HalPixelFormat::YCBCR_420_888),
+                              static_cast<PixelFormat>(mOutputPixelFormat),
                               GraphicBuffer::USAGE_HW_VIDEO_ENCODER, "V4L2DecodeComponent");
 
     if (mInitialEosBuffer->initCheck() != NO_ERROR) {
@@ -758,7 +758,14 @@ bool V4L2Decoder::changeResolution() {
         mInitialEosBuffer = nullptr;
     }
 
-    if (!startOutputQueue(mMinNumOutputBuffers, V4L2_MEMORY_DMABUF)) {
+    v4l2_memory memtype;
+    if (property_get_bool("ro.vendor.v4l2_codec2.decoder.use_dmabuf_outputqueue", true)) {
+        memtype = V4L2_MEMORY_DMABUF;
+    } else {
+        memtype = V4L2_MEMORY_MMAP;
+    }
+
+    if (!startOutputQueue(mMinNumOutputBuffers, memtype)) {
         ALOGE("Failed to start output queue during DRC.");
         return false;
     }
