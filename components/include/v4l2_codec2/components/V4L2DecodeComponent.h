@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_COMPONENTS_V4L2_DECODE_COMPONENT_H
 #define ANDROID_V4L2_CODEC2_COMPONENTS_V4L2_DECODE_COMPONENT_H
 
@@ -112,6 +116,17 @@ private:
     // The works whose input buffers are sent to |mDecoder|. The key is the
     // bitstream ID of work's input buffer.
     std::map<int32_t, std::unique_ptr<C2Work>> mWorksAtDecoder;
+
+    // The map links non-CSD inputs with CSD ones if there were any before.
+    // For a sequence of non-CSD inputs, it will just contain a 1-to-1 ID mapping.
+    std::map<int32_t, int32_t> mCompletebitstreamIDs;
+    // Stores "current" bitstream id. If previous input buffers were CSDs,
+    // then the first CSD id of that sequence will be stored here
+    int32_t mCurrentBitstreamId = 0;
+    // A flag that tells us whether there were CSD buffers before the current
+    // input. If there weren't any, then it's true.
+    bool mCompleteInput = true;
+
     // The bitstream ID of the works that output frames have been returned from |mDecoder|.
     // The order is display order.
     std::queue<int32_t> mOutputBitstreamIds;

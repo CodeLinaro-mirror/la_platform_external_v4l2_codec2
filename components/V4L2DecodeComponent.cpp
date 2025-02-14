@@ -475,6 +475,24 @@ void V4L2DecodeComponent::pumpPendingWorks() {
         ALOGW_IF(!res.second, "We already inserted bitstreamId %d to decoder?", bitstreamId);
 
         if (!isEmptyWork) {
+            if (mIntfImpl->getVideoCodec() == VideoCodec::VP9) {
+                // VP9 CSDs are ignored, thus, just do 1-to-1 mapping to make all the other
+                // logic downstream happy.
+                mCompletebitstreamIDs.insert(std::make_pair(bitstreamId, bitstreamId));
+            } else if (isCSDWork) {
+                if (mCompleteInput) {
+                    mCurrentBitstreamId = bitstreamId;
+                    mCompleteInput = false;
+                }
+            } else if (mCompleteInput) {
+                mCompletebitstreamIDs.insert(std::make_pair(bitstreamId, bitstreamId));
+            } else {
+                mCompletebitstreamIDs.insert(std::make_pair(mCurrentBitstreamId, bitstreamId));
+                mCompleteInput = true;
+            }
+        }
+
+        if (!isEmptyWork) {
             if (isCSDWork) {
                 processCSDWork(bitstreamId, work);
             } else {
@@ -597,7 +615,17 @@ void V4L2DecodeComponent::onOutputFrameReady(std::unique_ptr<VideoFrame> frame) 
     ALOGV("%s(bitstreamId=%d)", __func__, frame->getBitstreamId());
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
 
-    const int32_t bitstreamId = frame->getBitstreamId();
+    int32_t bitstreamId = frame->getBitstreamId();
+
+    auto itCompletebitstreamId = mCompletebitstreamIDs.find(bitstreamId);
+    if (itCompletebitstreamId == mCompletebitstreamIDs.end()) {
+        ALOGE("Corresponding complete id for bitstreamId=%d not found, already abandoned?", bitstreamId);
+        reportError(C2_CORRUPTED);
+        return;
+    }
+    bitstreamId = itCompletebitstreamId->second;
+    mCompletebitstreamIDs.erase(itCompletebitstreamId);
+
     auto it = mWorksAtDecoder.find(bitstreamId);
     if (it == mWorksAtDecoder.end()) {
         ALOGE("Work with bitstreamId=%d not found, already abandoned?", bitstreamId);
@@ -798,6 +826,9 @@ void V4L2DecodeComponent::reportAbandonedWorks() {
         abandonedWorks.emplace_back(std::move(kv.second));
     }
     mWorksAtDecoder.clear();
+    mCompletebitstreamIDs.clear();
+    mCompleteInput = true;
+
 
     for (auto& work : abandonedWorks) {
         // TODO: correlate the definition of flushed work result to framework.
