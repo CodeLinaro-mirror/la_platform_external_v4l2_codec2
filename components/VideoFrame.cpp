@@ -46,11 +46,11 @@ const Rect& VideoFrame::getVisibleRect() const {
     return mVisibleRect;
 }
 
-void VideoFrame::setBitstreamId(int32_t bitstreamId) {
+void VideoFrame::setBitstreamId(int64_t bitstreamId) {
     mBitstreamId = bitstreamId;
 }
 
-int32_t VideoFrame::getBitstreamId() const {
+int64_t VideoFrame::getBitstreamId() const {
     return mBitstreamId;
 }
 

@@ -17,12 +17,12 @@ namespace android {
 
 // The ConstBitstreamBuffer class can be used to store non-modifiable encoded video data.
 struct ConstBitstreamBuffer {
-    ConstBitstreamBuffer(const int32_t id, C2ConstLinearBlock dmabuf, const size_t offset,
+    ConstBitstreamBuffer(const int64_t id, C2ConstLinearBlock dmabuf, const size_t offset,
                          const size_t size, const uint8_t *data)
           : id(id), dmabuf(std::move(dmabuf)), offset(offset), size(size), data(data) {}
     ~ConstBitstreamBuffer() = default;
 
-    const int32_t id;
+    const int64_t id;
     C2ConstLinearBlock dmabuf;
     const size_t offset;
     const size_t size;

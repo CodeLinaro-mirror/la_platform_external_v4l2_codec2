@@ -33,8 +33,8 @@ public:
     const Rect& getVisibleRect() const;
 
     // Getter and setter of the bitstream ID of the corresponding input bitstream.
-    void setBitstreamId(int32_t bitstreamId);
-    int32_t getBitstreamId() const;
+    void setBitstreamId(int64_t bitstreamId);
+    int64_t getBitstreamId() const;
 
     // Get the read-only C2GraphicBlock, should be called after calling setVisibleRect().
     C2ConstGraphicBlock getGraphicBlock();
@@ -48,7 +48,7 @@ private:
     std::shared_ptr<C2GraphicBlock> mGraphicBlock;
     std::vector<int> mFds;
     Rect mVisibleRect;
-    int32_t mBitstreamId = -1;
+    int64_t mBitstreamId = -1;
 };
 
 }  // namespace android
