@@ -262,7 +262,7 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
 
     // Setup the input format.
     // Allocate of initial buffers with minimum supported dimension, to avoid the issue with buffer allocation by the kernel due to size constraints.
-    auto format = mInputQueue->setFormat(inputPixelFormat, ui::Size(kMinimumSupportedWidth, kMinimumSupportedHeight), inputBufferSize, 0);
+    auto format = mInputQueue->setFormat(inputPixelFormat, ui::Size(kMinimumSupportedWidth, kMinimumSupportedHeight), inputBufferSize, 0, colorAspects);
     if (!format) {
         ALOGE("Failed to call IOCTL to set input format.");
         return false;
