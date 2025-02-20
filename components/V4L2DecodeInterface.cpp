@@ -388,6 +388,35 @@ size_t V4L2DecodeInterface::getInputBufferSize() const {
     return calculateInputBufferSize(mSize->width * mSize->height);
 }
 
+std::unique_ptr<C2StreamColorAspectsInfo::output> V4L2DecodeInterface::getColorAspects() const {
+    C2Color::range_t range = C2Color::RANGE_UNSPECIFIED;
+    C2Color::primaries_t primaries = C2Color::PRIMARIES_UNSPECIFIED;
+    C2Color::transfer_t transfer = C2Color::TRANSFER_UNSPECIFIED;
+    C2Color::matrix_t matrix = C2Color::MATRIX_UNSPECIFIED;
+    if (mColorAspects)
+    {
+        range = range != C2Color::RANGE_UNSPECIFIED ? range : mColorAspects->range;
+        primaries = primaries != C2Color::PRIMARIES_UNSPECIFIED ? primaries : mColorAspects->primaries;
+        transfer = transfer != C2Color::TRANSFER_UNSPECIFIED ? transfer : mColorAspects->transfer;
+        matrix = matrix != C2Color::MATRIX_UNSPECIFIED ? matrix : mColorAspects->matrix;
+    }
+    if (mDefaultColorAspects)
+    {
+        range = range != C2Color::RANGE_UNSPECIFIED ? range : mDefaultColorAspects->range;
+        primaries = primaries != C2Color::PRIMARIES_UNSPECIFIED ? primaries : mDefaultColorAspects->primaries;
+        transfer = transfer != C2Color::TRANSFER_UNSPECIFIED ? transfer : mDefaultColorAspects->transfer;
+        matrix = matrix != C2Color::MATRIX_UNSPECIFIED ? matrix : mDefaultColorAspects->matrix;
+    }
+    if (mCodedColorAspects)
+    {
+        range = range != C2Color::RANGE_UNSPECIFIED ? range : mCodedColorAspects->range;
+        primaries = primaries != C2Color::PRIMARIES_UNSPECIFIED ? primaries : mCodedColorAspects->primaries;
+        transfer = transfer != C2Color::TRANSFER_UNSPECIFIED ? transfer : mCodedColorAspects->transfer;
+        matrix = matrix != C2Color::MATRIX_UNSPECIFIED ? matrix : mCodedColorAspects->matrix;
+    }
+    return std::make_unique<C2StreamColorAspectsInfo::output>(0u, range, primaries, transfer, matrix);
+}
+
 c2_status_t V4L2DecodeInterface::queryColorAspects(
         std::shared_ptr<C2StreamColorAspectsInfo::output>* targetColorAspects) {
     std::unique_ptr<C2StreamColorAspectsInfo::output> colorAspects =
