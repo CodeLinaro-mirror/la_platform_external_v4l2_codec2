@@ -124,11 +124,12 @@ bool waitForDRC(const C2ConstLinearBlock& input, std::optional<VideoCodec> codec
 std::unique_ptr<VideoDecoder> V4L2Decoder::Create(
         const VideoCodec& codec, const size_t inputBufferSize, const size_t minNumOutputBuffers,
         const HalPixelFormat outputPixelFormat,
+        const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects,
         GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb,
         scoped_refptr<::base::SequencedTaskRunner> taskRunner) {
     std::unique_ptr<V4L2Decoder> decoder =
             ::base::WrapUnique<V4L2Decoder>(new V4L2Decoder(taskRunner));
-    if (!decoder->start(codec, inputBufferSize, minNumOutputBuffers, outputPixelFormat,
+    if (!decoder->start(codec, inputBufferSize, minNumOutputBuffers, outputPixelFormat, colorAspects,
                         std::move(getPoolCb), std::move(outputCb), std::move(errorCb))) {
         return nullptr;
     }
@@ -170,8 +171,8 @@ V4L2Decoder::~V4L2Decoder() {
 
 bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
                         const size_t minNumOutputBuffers, const HalPixelFormat outputPixelFormat,
-                        GetPoolCB getPoolCb, OutputCB outputCb,
-                        ErrorCB errorCb) {
+                        const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects,
+                        GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb) {
     ALOGV("%s(codec=%s, inputBufferSize=%zu, minNumOutputBuffers=%zu)", __func__,
           VideoCodecToString(codec), inputBufferSize, minNumOutputBuffers);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
@@ -225,7 +226,7 @@ bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
         ALOGE("Failed to create V4L2 queue.");
         return false;
     }
-    if (!setupInputFormat(inputPixelFormat, inputBufferSize)) {
+    if (!setupInputFormat(inputPixelFormat, inputBufferSize, colorAspects)) {
         ALOGE("Failed to setup input format.");
         return false;
     }
@@ -245,7 +246,8 @@ bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
     return true;
 }
 
-bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t inputBufferSize) {
+bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t inputBufferSize,
+                                   const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects) {
     ALOGV("%s(inputPixelFormat=%u, inputBufferSize=%zu)", __func__, inputPixelFormat,
           inputBufferSize);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());

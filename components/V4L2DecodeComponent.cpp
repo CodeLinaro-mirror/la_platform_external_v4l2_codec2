@@ -243,9 +243,16 @@ void V4L2DecodeComponent::startTask(c2_status_t* status, ::base::WaitableEvent* 
     const size_t minNumOutputBuffers = getMinNumOutputBuffers(*codec);
     const HalPixelFormat outputPixelFormat = mIntfImpl->getOutputPixelFormat();
 
+    // Get default color aspects on start.
+    if (!mIsSecure && *codec == VideoCodec::H264) {
+        if (mIntfImpl->queryColorAspects(&mCurrentColorAspects) != C2_OK) return;
+        mPendingColorAspectsChange = false;
+    }
+
     // ::base::Unretained(this) is safe here because |mDecoder| is always destroyed before
     // |mDecoderThread| is stopped, so |*this| is always valid during |mDecoder|'s lifetime.
     mDecoder = V4L2Decoder::Create(*codec, inputBufferSize, minNumOutputBuffers, outputPixelFormat,
+                                   mIntfImpl->getColorAspects(),
                                    ::base::BindRepeating(&V4L2DecodeComponent::getVideoFramePool,
                                                          ::base::Unretained(this)),
                                    ::base::BindRepeating(&V4L2DecodeComponent::onOutputFrameReady,
@@ -256,12 +263,6 @@ void V4L2DecodeComponent::startTask(c2_status_t* status, ::base::WaitableEvent* 
     if (!mDecoder) {
         ALOGE("Failed to create V4L2Decoder for %s", VideoCodecToString(*codec));
         return;
-    }
-
-    // Get default color aspects on start.
-    if (!mIsSecure && *codec == VideoCodec::H264) {
-        if (mIntfImpl->queryColorAspects(&mCurrentColorAspects) != C2_OK) return;
-        mPendingColorAspectsChange = false;
     }
 
     *status = C2_OK;
