@@ -505,9 +505,8 @@ bool V4L2Encoder::configureInputFormat(VideoPixelFormat inputFormat, uint32_t st
         return false;
     }
 
-    // Calculate the input coded size from the format.
-    // TODO(dstaessens): How is this different from mInputLayout->coded_size()?
-    mInputCodedSize = V4L2Device::allocatedSizeFromV4L2Format(*format);
+    // Get the input coded size from input layout.
+    mInputCodedSize = mInputLayout->mCodedSize;
 
     // Configuring the input format might cause the output buffer size to change.
     auto outputFormat = mOutputQueue->getFormat();
