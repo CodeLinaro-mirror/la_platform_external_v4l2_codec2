@@ -701,11 +701,19 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
             auto outputBuffer = mOutputQueue->getFreeBuffer(bufferId);
             ALOG_ASSERT(outputBuffer, "V4L2 output queue slot %zu is not freed.", bufferId);
 
-            if (!std::move(*outputBuffer).queueDMABuf(frame->getFDs())) {
+            bool result;
+            if (outputBuffer->memory() == V4L2_MEMORY_MMAP) {
+                result = std::move(*outputBuffer).queueMMap();
+            } else {
+                result = std::move(*outputBuffer).queueDMABuf(frame->getFDs());
+            }
+
+            if (!result) {
                 ALOGE("%s(): Failed to recycle empty buffer to output queue.", __func__);
                 onError();
                 return;
             }
+
             mFrameAtDevice.insert(std::make_pair(bufferId, std::move(frame)));
         }
 
@@ -912,12 +920,20 @@ void V4L2Decoder::onVideoFrameReady(
     uint32_t v4l2Id = outputBuffer->bufferId();
     ALOGV("QBUF to output queue, blockId=%u, V4L2Id=%u", blockId, v4l2Id);
 
-    if (!std::move(*outputBuffer).queueDMABuf(frame->getFDs())) {
+    bool result;
+    if (outputBuffer->memory() == V4L2_MEMORY_MMAP) {
+        result = std::move(*outputBuffer).queueMMap();
+    } else {
+        result = std::move(*outputBuffer).queueDMABuf(frame->getFDs());
+    }
+
+    if (!result) {
         ALOGE("%s(): Failed to QBUF to output queue, blockId=%u, V4L2Id=%u", __func__, blockId,
               v4l2Id);
         onError();
         return;
     }
+
     if (mFrameAtDevice.find(v4l2Id) != mFrameAtDevice.end()) {
         ALOGE("%s(): V4L2 buffer %d already enqueued.", __func__, v4l2Id);
         onError();
