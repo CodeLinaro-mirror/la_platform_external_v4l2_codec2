@@ -689,6 +689,15 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         mFrameAtDevice.erase(it);
 
         if (bytesUsed > 0) {
+             if (dequeuedBuffer->memory() == V4L2_MEMORY_MMAP) {
+                C2GraphicView graphicView = frame->getGraphicView();
+                if (graphicView.error() != C2_OK) {
+                    ALOGE("%s(): Get graphic view err = %d", __func__, graphicView.error());
+                    onError();
+                    return;
+                }
+                memcpy(*graphicView.data(), dequeuedBuffer->getPlaneMapping(0), bytesUsed);
+            }
             ALOGV("Send output frame(bitstreamId=%ld) to client", bitstreamId);
             frame->setBitstreamId(bitstreamId);
             frame->setVisibleRect(mVisibleRect);
