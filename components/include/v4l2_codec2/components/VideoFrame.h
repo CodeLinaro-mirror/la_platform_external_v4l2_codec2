@@ -39,6 +39,9 @@ public:
     // Get the read-only C2GraphicBlock, should be called after calling setVisibleRect().
     C2ConstGraphicBlock getGraphicBlock();
 
+    // Get read-write C2GraphicView.
+    C2GraphicView getGraphicView();
+
     // Invocate writable map() to trigger TRANSFER_TO_HOST command.
     void sync();
 

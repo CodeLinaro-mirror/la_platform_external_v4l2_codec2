@@ -58,6 +58,10 @@ C2ConstGraphicBlock VideoFrame::getGraphicBlock() {
     return mGraphicBlock->share(C2Rect(mVisibleRect.width(), mVisibleRect.height()), C2Fence());
 }
 
+C2GraphicView VideoFrame::getGraphicView() {
+    return mGraphicBlock->map().get();
+}
+
 void VideoFrame::sync() {
     mGraphicBlock->map();
 }
