@@ -244,7 +244,7 @@ void V4L2DecodeComponent::startTask(c2_status_t* status, ::base::WaitableEvent* 
     const HalPixelFormat outputPixelFormat = mIntfImpl->getOutputPixelFormat();
 
     // Get default color aspects on start.
-    if (!mIsSecure && *codec == VideoCodec::H264) {
+    if ((!mIsSecure && *codec == VideoCodec::H264) || *codec  == VideoCodec::HEVC) {
         if (mIntfImpl->queryColorAspects(&mCurrentColorAspects) != C2_OK) return;
         mPendingColorAspectsChange = false;
     }
