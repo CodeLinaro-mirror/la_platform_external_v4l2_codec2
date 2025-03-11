@@ -106,6 +106,9 @@ struct v4l2_format buildV4L2Format(const enum v4l2_buf_type type, uint32_t fourc
         }
         // Codec2 transfer is V4L2 xfer_func.
         switch (colorAspects->transfer) {
+        case C2Color::TRANSFER_SRGB:
+            format.fmt.pix_mp.xfer_func = V4L2_XFER_FUNC_SRGB;
+            break;
         default:
             format.fmt.pix_mp.xfer_func = V4L2_XFER_FUNC_DEFAULT;
             break;
