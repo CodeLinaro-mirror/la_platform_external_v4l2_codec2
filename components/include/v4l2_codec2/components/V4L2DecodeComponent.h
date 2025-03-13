@@ -117,16 +117,6 @@ private:
     // bitstream ID of work's input buffer.
     std::map<int64_t, std::unique_ptr<C2Work>> mWorksAtDecoder;
 
-    // The map links non-CSD inputs with CSD ones if there were any before.
-    // For a sequence of non-CSD inputs, it will just contain a 1-to-1 ID mapping.
-    std::map<int64_t, int64_t> mCompletebitstreamIDs;
-    // Stores "current" bitstream id. If previous input buffers were CSDs,
-    // then the first CSD id of that sequence will be stored here
-    int64_t mCurrentBitstreamId = 0;
-    // A flag that tells us whether there were CSD buffers before the current
-    // input. If there weren't any, then it's true.
-    bool mCompleteInput = true;
-
     // The bitstream ID of the works that output frames have been returned from |mDecoder|.
     // The order is display order.
     std::queue<int64_t> mOutputBitstreamIds;
