@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "NalParser"
 
@@ -196,6 +200,16 @@ bool HEVCNalParser::locateSPS() {
     while (locateNextNal()) {
         if (length() == 0) continue;
         if (type() != kSPSType) continue;
+        return true;
+    }
+
+    return false;
+}
+
+bool HEVCNalParser::locatePPS() {
+    while (locateNextNal()) {
+        if (length() == 0) continue;
+        if (type() != kPPSType) continue;
         return true;
     }
 

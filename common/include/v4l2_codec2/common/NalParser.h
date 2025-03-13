@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_COMMON_NALPARSER_H
 #define ANDROID_V4L2_CODEC2_COMMON_NALPARSER_H
 
@@ -35,6 +39,7 @@ public:
 
     // Locate the sequence parameter set (SPS).
     virtual bool locateSPS() = 0;
+    virtual bool locatePPS() = 0;
     virtual bool locateIDR() = 0;
 
     // Gets current NAL data (start code is not included).
