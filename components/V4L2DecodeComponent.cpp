@@ -68,6 +68,37 @@ int64_t timestampToBitstreamId(c2_cntr64_t timestamp, c2_cntr64_t frameIndex) {
     return static_cast<int64_t>(timestamp.peekll() + frameIndex.peekll() + INT32_MAX);
 }
 
+// Function that checks if data is align to Access Unit.
+// It should contain SPS + PPS + IDR NALs 
+bool isAUAligned(const uint8_t* data, size_t length, std::optional<VideoCodec> codec) {
+    std::unique_ptr<NalParser> parser;
+    if (codec == VideoCodec::H264) {
+        parser = std::make_unique<H264NalParser>(data, length);
+    } else if (codec == VideoCodec::HEVC) {
+        parser = std::make_unique<HEVCNalParser>(data, length);
+    } else {
+        ALOGV("Unsupported codec parser");
+        return false;
+    }
+
+    if (!parser->locateSPS()) {
+        ALOGV("SPS not found");
+        return false;
+    }
+
+    if (!parser->locatePPS()) {
+        ALOGV("PPS not found");
+        return false;
+    }
+
+    if (!parser->locateIDR()) {
+        ALOGV("IDR not found");
+        return false;
+    }
+
+    return true;
+}
+
 bool parseCodedColorAspects(const C2ConstLinearBlock& input, std::optional<VideoCodec> codec,
                             C2StreamColorAspectsInfo::input* codedAspects) {
     C2ReadView view = input.map().get();
@@ -480,7 +511,19 @@ void V4L2DecodeComponent::pumpPendingWorks() {
             if (isCSDWork) {
                 processCSDWork(bitstreamId, work);
             } else {
-                processWork(bitstreamId, work);
+                if (!mCsdInputComplate) {
+                    if (checkCSDInputAUAligned(work)) {
+                        ALOGV("CSD input align to Access Unit");
+                        processCompleteCSDWork(bitstreamId, work);
+                    } else {
+                        auto it = mWorksAtDecoder.find(bitstreamId);
+                        ALOG_ASSERT(it != mWorksAtDecoder.end());
+                        it->second.get()->input.buffers.front().reset();
+                        reportWorkIfFinished(bitstreamId);
+                    }
+                } else {
+                    processWork(bitstreamId, work);
+                }
             }
         }
 
@@ -492,6 +535,54 @@ void V4L2DecodeComponent::pumpPendingWorks() {
         // Directly report the empty CSD work as finished.
         if (isCSDWork && isEmptyWork) reportWorkIfFinished(bitstreamId);
     }
+}
+
+bool V4L2DecodeComponent::checkCSDInputAUAligned(const C2Work* work) {
+    C2ConstLinearBlock linearBlock =
+                    work->input.buffers.front()->data().linearBlocks().front();
+    C2ReadView view = linearBlock.map().get();
+    mCachedCsd.insert(mCachedCsd.end(), view.data(), view.data() + view.capacity());
+    
+    return isAUAligned(mCachedCsd.data(), mCachedCsd.size(), mIntfImpl->getVideoCodec());
+}
+
+void V4L2DecodeComponent::processCompleteCSDWork(const int64_t bitstreamId, const C2Work* work) {
+    // [HACK] We get linearBlock from current C2Work and inject cached CSD input data
+    // to create bitstream buffer for decoding. 
+    // It is only works for MMAP input buffer. For DMAbuf memory only last C2Work buffer
+    // is passed, not cached CSD input. 
+    C2ConstLinearBlock linearBlock =
+            work->input.buffers.front()->data().linearBlocks().front();
+    std::unique_ptr<ConstBitstreamBuffer> buffer = std::make_unique<ConstBitstreamBuffer>(
+        mCsdBitstreamId, linearBlock, linearBlock.offset(), mCachedCsd.size(), mCachedCsd.data());
+    if (!buffer) {
+        reportError(C2_CORRUPTED);
+        return;
+    }
+
+    // Replace current work from mWorksAtDecoder with first CSD buffer that we received.
+    // This provides V4L2-compatible timestamp scheme.
+    // According to the current V4L2 specifications[1], if multiple OUTPUT
+    // buffers generate a single CAPTURE buffer, the timestamp of the OUTPUT
+    // buffer queued first should be used for the corresponding CAPTURE
+    // buffer.
+    // In this case if complete CSD frame consists of several input buffers it has
+    // timestamp from the first cached buffer.
+    // In practice, this means that if input is:
+    // ts=0 (CSD), ts=1 (CSD), ts=2(non-CSD), ts=3(non-CSD), ts=4(non-CSD)
+    // the following output is:
+    // ts=0, ts=3, ts=4
+    // [1] https://www.kernel.org/doc/html/latest/userspace-api/media/v4l/dev-decoder.html
+    auto it = mWorksAtDecoder.find(bitstreamId);
+    ALOG_ASSERT(it != mWorksAtDecoder.end());
+    auto res = mWorksAtDecoder.insert(std::make_pair(mCsdBitstreamId, std::move(it->second)));
+    ALOGW_IF(!res.second, "We already inserted bitstreamId %ld to decoder?", mCsdBitstreamId);
+    mWorksAtDecoder.erase(it);
+
+    mDecoder->decode(std::move(buffer), ::base::BindOnce(&V4L2DecodeComponent::onDecodeDone,
+                                                                mWeakThis, mCsdBitstreamId));
+
+    mCsdInputComplate = true;
 }
 
 void V4L2DecodeComponent::processCSDWork(const int64_t bitstreamId, const C2Work* work) {
@@ -527,6 +618,25 @@ void V4L2DecodeComponent::processCSDWork(const int64_t bitstreamId, const C2Work
             // buffers whose frame indices are not less than this one.
             mPendingColorAspectsChange = true;
             mPendingColorAspectsChangeFrameIndex = work->input.ordinal.frameIndex.peeku();
+        }
+
+        if (!checkCSDInputAUAligned(work)){
+            ALOGV("CSD input not align to Access Unit");
+            if (mCsdInputComplate) {
+                mCsdBitstreamId = bitstreamId;
+                mCsdInputComplate = false;
+            }
+            auto it = mWorksAtDecoder.find(bitstreamId);
+            ALOG_ASSERT(it != mWorksAtDecoder.end());
+            it->second.get()->input.buffers.front().reset();
+            reportWorkIfFinished(bitstreamId);
+            return;
+        } else {
+            ALOGV("CSD input align to Access Unit");
+            if (!mCsdInputComplate) {
+                processCompleteCSDWork(bitstreamId, work);
+                return;
+            }
         }
     }
 
@@ -566,6 +676,11 @@ void V4L2DecodeComponent::onDecodeDone(int64_t bitstreamId, VideoDecoder::Decode
     auto it = mWorksAtDecoder.find(bitstreamId);
     ALOG_ASSERT(it != mWorksAtDecoder.end());
     C2Work* work = it->second.get();
+
+    if (bitstreamId == mCsdBitstreamId) {
+        mCachedCsd.clear();
+        mCsdBitstreamId = 0;
+    }
 
     switch (status) {
     case VideoDecoder::DecodeStatus::kAborted:

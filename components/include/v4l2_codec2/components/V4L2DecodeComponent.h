@@ -74,7 +74,12 @@ private:
     // Try to process pending works at |mPendingWorks|. Paused when |mIsDraining| is set.
     void pumpPendingWorks();
 
+    // Check if cached CSD input is Access Unit aligned.
+    bool checkCSDInputAUAligned(const C2Work* work);
+
     void processCSDWork(const int64_t bitstreamId, const C2Work* work);
+    // Process cached CSD input if they are Access Unit aligned. Start decoding aligned data.
+    void processCompleteCSDWork(const int64_t bitstreamId, const C2Work* work);
     void processWork(const int64_t bitstreamId, const C2Work* work);
     void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock);
 
@@ -113,6 +118,15 @@ private:
     std::unique_ptr<VideoDecoder> mDecoder;
     // The queue of works that haven't processed and sent to |mDecoder|.
     std::queue<std::unique_ptr<C2Work>> mPendingWorks;
+
+    // Stores first CSD bitstream id if CSD input is not AU-align.
+    int64_t mCsdBitstreamId = 0;
+    // Buffer to cached CSD input data if it is not AU-align.
+    std::vector<uint8_t> mCachedCsd;
+    // Flag that tells if CSD input is AU-align. False means that
+    // CSD input is not AU-align and we cache data from it.  
+    bool mCsdInputComplate = true;
+
     // The works whose input buffers are sent to |mDecoder|. The key is the
     // bitstream ID of work's input buffer.
     std::map<int64_t, std::unique_ptr<C2Work>> mWorksAtDecoder;
