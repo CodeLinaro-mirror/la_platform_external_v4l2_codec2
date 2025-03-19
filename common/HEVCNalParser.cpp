@@ -219,7 +219,7 @@ bool HEVCNalParser::locatePPS() {
 bool HEVCNalParser::locateIDR() {
     while (locateNextNal()) {
         if (length() == 0) continue;
-        if (type() != kIDRWType && type() != kIDRNType) continue;
+        if (type() != kIDRWType && type() != kIDRNType && type() != kCRAType) continue;
         return true;
     }
 
