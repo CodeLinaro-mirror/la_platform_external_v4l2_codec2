@@ -783,7 +783,14 @@ void V4L2DecodeComponent::detectNoShowFrameWorksAndReportIfFinished(
     }
 
     // Try to report works with no-show frame.
-    for (const int64_t bitstreamId : noShowFrameBitstreamIds) reportWorkIfFinished(bitstreamId);
+    for (const int64_t bitstreamId : noShowFrameBitstreamIds) {
+        if(!reportWorkIfFinished(bitstreamId)) {
+            auto it = mWorksAtDecoder.find(bitstreamId);
+            ALOG_ASSERT(it != mWorksAtDecoder.end());
+            C2Work* work = it->second.get();
+            work->worklets.front()->output.flags = static_cast<C2FrameData::flags_t>(0);
+        }
+    }
 }
 
 void V4L2DecodeComponent::pumpReportWork() {
