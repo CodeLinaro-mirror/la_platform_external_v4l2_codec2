@@ -730,21 +730,7 @@ void V4L2Decoder::flush() {
     setState(State::Idle);
 }
 
-void V4L2Decoder::serviceDeviceTask(bool event) {
-    ATRACE_CALL();
-    ALOGV("%s(event=%d) state=%s InputQueue(%s):%zu+%zu/%zu, OutputQueue(%s):%zu+%zu/%zu", __func__,
-          event, StateToString(mState), (mInputQueue->isStreaming() ? "streamon" : "streamoff"),
-          mInputQueue->freeBuffersCount(), mInputQueue->queuedBuffersCount(),
-          mInputQueue->allocatedBuffersCount(),
-          (mOutputQueue->isStreaming() ? "streamon" : "streamoff"),
-          mOutputQueue->freeBuffersCount(), mOutputQueue->queuedBuffersCount(),
-          mOutputQueue->allocatedBuffersCount());
-
-    ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
-
-    if (mState == State::Error) return;
-
-    // Dequeue output and input queue.
+bool V4L2Decoder::dequeueInputQueue() {
     bool inputDequeued = false;
     while (mInputQueue->queuedBuffersCount() > 0) {
         bool success;
@@ -753,7 +739,7 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         if (!success) {
             ALOGE("Failed to dequeue buffer from input queue.");
             onError();
-            return;
+            return false;
         }
         if (!dequeuedBuffer) break;
 
@@ -772,6 +758,26 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         std::move(it->second).Run(VideoDecoder::DecodeStatus::kOk);
         mPendingDecodeCbs.erase(it);
     }
+
+    return inputDequeued;
+}
+
+void V4L2Decoder::serviceDeviceTask(bool event) {
+    ATRACE_CALL();
+    ALOGV("%s(event=%d) state=%s InputQueue(%s):%zu+%zu/%zu, OutputQueue(%s):%zu+%zu/%zu", __func__,
+          event, StateToString(mState), (mInputQueue->isStreaming() ? "streamon" : "streamoff"),
+          mInputQueue->freeBuffersCount(), mInputQueue->queuedBuffersCount(),
+          mInputQueue->allocatedBuffersCount(),
+          (mOutputQueue->isStreaming() ? "streamon" : "streamoff"),
+          mOutputQueue->freeBuffersCount(), mOutputQueue->queuedBuffersCount(),
+          mOutputQueue->allocatedBuffersCount());
+
+    ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+
+    if (mState == State::Error) return;
+
+    // Dequeue output and input queue.
+    bool inputDequeued = dequeueInputQueue();
 
     bool outputDequeued = false;
     while ((mOutputQueue->queuedBuffersCount() > 0) && mVideoFramePool) {
@@ -842,6 +848,8 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         }
 
         if (mDrainCb && isLast) {
+            // Dequeue remaining input buffers before drain completed.
+            dequeueInputQueue();
             ALOGV("All buffers are drained.");
             sendV4L2DecoderCmd(true);
             std::move(mDrainCb).Run(VideoDecoder::DecodeStatus::kOk);

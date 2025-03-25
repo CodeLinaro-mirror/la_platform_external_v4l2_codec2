@@ -100,6 +100,7 @@ private:
     void pumpDecodeRequest();
 
     void serviceDeviceTask(bool event);
+    bool dequeueInputQueue(); 
     bool dequeueResolutionChangeEvent();
     bool changeResolution();
     bool setupOutputFormat(const ui::Size& size,
