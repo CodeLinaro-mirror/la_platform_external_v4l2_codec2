@@ -251,7 +251,8 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
     ALOGV("%s(inputPixelFormat=%u, inputBufferSize=%zu)", __func__, inputPixelFormat,
           inputBufferSize);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
-
+    const C2ColorAspectsStruct *c2ColorAspects =
+        static_cast<const C2ColorAspectsStruct *>(colorAspects.get());
     // Check if the format is supported.
     std::vector<uint32_t> formats =
             mDevice->enumerateSupportedPixelformats(V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
@@ -262,7 +263,8 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
 
     // Setup the input format.
     // Allocate of initial buffers with minimum supported dimension, to avoid the issue with buffer allocation by the kernel due to size constraints.
-    auto format = mInputQueue->setFormat(inputPixelFormat, ui::Size(kMinimumSupportedWidth, kMinimumSupportedHeight), inputBufferSize, 0, colorAspects);
+    auto format = mInputQueue->setFormat(inputPixelFormat, ui::Size(kMinimumSupportedWidth,
+        kMinimumSupportedHeight), inputBufferSize, 0, c2ColorAspects);
     if (!format) {
         ALOGE("Failed to call IOCTL to set input format.");
         return false;
