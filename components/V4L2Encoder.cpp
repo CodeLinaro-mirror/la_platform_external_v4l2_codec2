@@ -61,6 +61,7 @@ std::unique_ptr<VideoEncoder> V4L2Encoder::create(
         C2Config::profile_t outputProfile, std::optional<uint8_t> level,
         const ui::Size& visibleSize, uint32_t stride, uint32_t keyFramePeriod,
         C2Config::bitrate_mode_t bitrateMode, uint32_t bitrate, std::optional<uint32_t> peakBitrate,
+        const std::shared_ptr<C2StreamColorAspectsInfo::input> &colorAspects,
         FetchOutputBufferCB fetchOutputBufferCb, InputBufferDoneCB inputBufferDoneCb,
         OutputBufferDoneCB outputBufferDoneCb, DrainDoneCB drainDoneCb, ErrorCB errorCb,
         scoped_refptr<::base::SequencedTaskRunner> taskRunner) {
@@ -70,7 +71,7 @@ std::unique_ptr<VideoEncoder> V4L2Encoder::create(
             std::move(taskRunner), std::move(fetchOutputBufferCb), std::move(inputBufferDoneCb),
             std::move(outputBufferDoneCb), std::move(drainDoneCb), std::move(errorCb)));
     if (!encoder->initialize(outputProfile, level, visibleSize, stride, keyFramePeriod, bitrateMode,
-                             bitrate, peakBitrate)) {
+                             bitrate, peakBitrate, colorAspects)) {
         return nullptr;
     }
     return encoder;
@@ -212,7 +213,8 @@ VideoPixelFormat V4L2Encoder::inputFormat() const {
 bool V4L2Encoder::initialize(C2Config::profile_t outputProfile, std::optional<uint8_t> level,
                              const ui::Size& visibleSize, uint32_t stride, uint32_t keyFramePeriod,
                              C2Config::bitrate_mode_t bitrateMode, uint32_t bitrate,
-                             std::optional<uint32_t> peakBitrate) {
+                             std::optional<uint32_t> peakBitrate,
+                             const std::shared_ptr<C2StreamColorAspectsInfo::input>& colorAspects) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
     ALOG_ASSERT(keyFramePeriod > 0);
@@ -272,7 +274,7 @@ bool V4L2Encoder::initialize(C2Config::profile_t outputProfile, std::optional<ui
 
     // Configure the input format. If the device doesn't support the specified format we'll use one
     // of the device's preferred formats in combination with an input format convertor.
-    if (!configureInputFormat(kInputPixelFormat, stride)) return false;
+    if (!configureInputFormat(kInputPixelFormat, stride, colorAspects)) return false;
 
     // Create input and output buffers.
     if (!createInputBuffers() || !createOutputBuffers()) return false;
@@ -459,18 +461,23 @@ void V4L2Encoder::onDrainDone(bool done) {
     }
 }
 
-bool V4L2Encoder::configureInputFormat(VideoPixelFormat inputFormat, uint32_t stride) {
+bool V4L2Encoder::configureInputFormat(VideoPixelFormat inputFormat, uint32_t stride,
+        const std::shared_ptr<C2StreamColorAspectsInfo::input>& colorAspects) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
     ALOG_ASSERT(mState == State::UNINITIALIZED);
     ALOG_ASSERT(!mInputQueue->isStreaming());
     ALOG_ASSERT(!isEmpty(mVisibleSize));
 
+    const C2ColorAspectsStruct *c2ColorAspects =
+        static_cast<const C2ColorAspectsStruct *>(colorAspects.get());
+
     // First try to use the requested pixel format directly.
     std::optional<struct v4l2_format> format;
     auto fourcc = Fourcc::fromVideoPixelFormat(inputFormat, true);
     if (fourcc) {
-        format = mInputQueue->setFormat(fourcc->toV4L2PixFmt(), mVisibleSize, 0, stride);
+        format = mInputQueue->setFormat(fourcc->toV4L2PixFmt(), mVisibleSize, 0, stride,
+            c2ColorAspects);
     }
 
     // If the device doesn't support the requested input format we'll try the device's preferred
@@ -480,7 +487,8 @@ bool V4L2Encoder::configureInputFormat(VideoPixelFormat inputFormat, uint32_t st
         std::vector<uint32_t> preferredFormats =
                 mDevice->preferredInputFormat(V4L2Device::Type::kEncoder);
         for (uint32_t i = 0; !format && i < preferredFormats.size(); ++i) {
-            format = mInputQueue->setFormat(preferredFormats[i], mVisibleSize, 0, stride);
+            format = mInputQueue->setFormat(preferredFormats[i], mVisibleSize, 0, stride,
+                c2ColorAspects);
         }
     }
 
