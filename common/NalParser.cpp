@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "NalParser"
 
@@ -23,6 +27,31 @@ bool NalParser::locateNextNal() {
     mCurrNalDataPos = mNextNalStartCodePos + kNalStartCodeLength;  // skip start code.
     mNextNalStartCodePos = findNextStartCodePos();
     return true;
+}
+
+NalParser::AccessUnit* NalParser::getAccessUnitSlot() {
+    if (mAccessUnits.empty() || mAccessUnits.back().completed) {
+        mAccessUnits.push_back(AccessUnit{{}, false, false});
+    }
+    return &mAccessUnits.back();
+}
+
+NalParser::AccessUnit* NalParser::frontAccessUnit() {
+    if (!mAccessUnits.empty()) {
+        return &mAccessUnits.front();
+    }
+
+    return nullptr;
+}
+
+void NalParser::popAccessUnit() {
+    if (!mAccessUnits.empty()) {
+        mAccessUnits.pop_front();
+    }
+}
+
+void NalParser::clearAccessUnits() {
+    mAccessUnits.clear();
 }
 
 const uint8_t* NalParser::data() const {

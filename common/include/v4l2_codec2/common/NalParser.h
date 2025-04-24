@@ -10,6 +10,8 @@
 #define ANDROID_V4L2_CODEC2_COMMON_NALPARSER_H
 
 #include <stdint.h>
+#include <vector>
+#include <deque>
 
 #include <media/stagefright/foundation/ABitReader.h>
 
@@ -26,6 +28,13 @@ public:
         bool fullRange;
     };
 
+    // Parameters related to a Access Unit.
+    struct AccessUnit {
+        std::vector<uint8_t> nals; // NALs sequence in AU
+        bool vclFound;             // VCL NAL found flag
+        bool completed;            // AU alignment flag
+    };
+
     NalParser(const uint8_t* data, size_t length);
     virtual ~NalParser() = default;
 
@@ -36,6 +45,13 @@ public:
     //
     // Note: This method must be called prior to data() and length().
     bool locateNextNal();
+
+    // Get first Access Unit from queue.
+    AccessUnit* frontAccessUnit();
+    // Pop first Access Unit from queue.
+    void popAccessUnit();
+    // Clear Access Unit queue.
+    void clearAccessUnits();
 
     // Locate the sequence parameter set (SPS).
     virtual bool locateSPS() = 0;
@@ -63,6 +79,12 @@ public:
 protected:
     const uint8_t* findNextStartCodePos() const;
 
+    // Get current slot in Access Unit queue.
+    // If the last AU is not completed return pointer to it.
+    // If AU queue is empty or the last AU is completed 
+    // create a new item and return pointer to it.
+    AccessUnit* getAccessUnitSlot();
+
     // The byte pattern for the start of a NAL unit.
     const uint8_t kNalStartCode[3] = {0x00, 0x00, 0x01};
     // The length in bytes of the NAL-unit start pattern.
@@ -71,6 +93,9 @@ protected:
     const uint8_t* mCurrNalDataPos;
     const uint8_t* mDataEnd;
     const uint8_t* mNextNalStartCodePos;
+
+    // Queue to collect Access Units in parser. 
+    std::deque<AccessUnit> mAccessUnits;
 };
 
 }  // namespace android
