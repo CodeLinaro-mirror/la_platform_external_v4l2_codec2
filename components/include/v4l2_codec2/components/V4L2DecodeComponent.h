@@ -85,14 +85,20 @@ private:
     // If new settings found trigger color aspects change. 
     void checkCodedColorAspects(const C2Work* work);
 
-    // Check if cached CSD input is Access Unit aligned.
-    bool checkCSDInputAUAligned(const C2Work* work);
+    // Get last input work of current AU and trigger send action with it.
+    void sendLastAccessUnit();
 
-    void processCSDWork(const int64_t bitstreamId, const C2Work* work);
-    // Process cached CSD input if they are Access Unit aligned. Start decoding aligned data.
-    void processCompleteCSDWork(const int64_t bitstreamId, const C2Work* work);
-    void processWork(const int64_t bitstreamId, const C2Work* work);
-    void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock);
+    // Report Access Unit works as dropped frame.
+    void reportAccessUnitWorks();
+
+    // Process input work and check it content to trigger proper decoding action. 
+    void processInputWork(const int64_t bitstreamId, const C2Work* work, 
+                                                     const bool isCSDWork, 
+                                                     const bool isEOSWork, 
+                                                     const bool isEmptyWork);
+    
+    // Process work buffer by creating bitstream buffer from it and send for decoding if needed.
+    void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock, const uint8_t flags);
 
     // Get the buffer pool.
     std::unique_ptr<VideoFramePool> getVideoFramePool(const ui::Size& size,
@@ -132,13 +138,10 @@ private:
 
     // The common NALs parser.
     std::unique_ptr<NalParser> mNalParser;
-    // Stores first CSD bitstream id if CSD input is not AU-align.
-    int64_t mCsdBitstreamId = 0;
-    // Buffer to cached CSD input data if it is not AU-align.
-    std::vector<uint8_t> mCachedCsd;
-    // Flag that tells if CSD input is AU-align. False means that
-    // CSD input is not AU-align and we cache data from it.  
-    bool mCsdInputComplate = true;
+    // Flag that tells if input is AU-align.  
+    bool mInputAUAlign = true;
+    // Stores input buffers bitstream IDs if they are not AU-align.
+    std::deque<int64_t> mInputBitstreamIds;
 
     // The works whose input buffers are sent to |mDecoder|. The key is the
     // bitstream ID of work's input buffer.
