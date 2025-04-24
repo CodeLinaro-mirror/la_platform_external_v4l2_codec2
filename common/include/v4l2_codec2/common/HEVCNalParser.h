@@ -97,9 +97,12 @@ public:
         HEVC_UNSPEC_NON_VCL_NAL_TYPE_MAX = 63,
     };
 
+    HEVCNalParser();
     HEVCNalParser(const uint8_t* data, size_t length);
     ~HEVCNalParser() = default;
 
+    bool parse() override;
+    
     // Locate the sequence parameter set (SPS).
     bool locateSPS() override;
     bool locatePPS() override;

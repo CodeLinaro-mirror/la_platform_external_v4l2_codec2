@@ -35,6 +35,7 @@ public:
         bool completed;            // AU alignment flag
     };
 
+    NalParser();
     NalParser(const uint8_t* data, size_t length);
     virtual ~NalParser() = default;
 
@@ -45,6 +46,13 @@ public:
     //
     // Note: This method must be called prior to data() and length().
     bool locateNextNal();
+
+    // Set data buffer for parsing.
+    bool loadData(const uint8_t* data, size_t length);
+
+    // Parse NAL units in current data buffer.
+    // Return true if Access Unit completed.
+    virtual bool parse() = 0;
 
     // Get first Access Unit from queue.
     AccessUnit* frontAccessUnit();
@@ -78,6 +86,9 @@ public:
 
 protected:
     const uint8_t* findNextStartCodePos() const;
+    // Restore parser to beginning. 
+    // Set current NAL data position to begin of data buffer and search for first NAL.
+    void reset();
 
     // Get current slot in Access Unit queue.
     // If the last AU is not completed return pointer to it.
@@ -90,6 +101,7 @@ protected:
     // The length in bytes of the NAL-unit start pattern.
     const size_t kNalStartCodeLength = 3;
 
+    const uint8_t* mDataStart;
     const uint8_t* mCurrNalDataPos;
     const uint8_t* mDataEnd;
     const uint8_t* mNextNalStartCodePos;
