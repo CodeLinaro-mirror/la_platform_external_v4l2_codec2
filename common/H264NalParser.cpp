@@ -78,7 +78,7 @@ H264NalParser::H264NalParser(const uint8_t* data, size_t length) : NalParser(dat
 bool H264NalParser::locateSPS() {
     while (locateNextNal()) {
         if (length() == 0) continue;
-        if (type() != kSPSType) continue;
+        if (type() != NalUnitType::H264_NAL_SPS) continue;
         return true;
     }
 
@@ -88,7 +88,7 @@ bool H264NalParser::locateSPS() {
 bool H264NalParser::locatePPS() {
     while (locateNextNal()) {
         if (length() == 0) continue;
-        if (type() != kPPSType) continue;
+        if (type() != NalUnitType::H264_NAL_PPS) continue;
         return true;
     }
 
@@ -98,7 +98,7 @@ bool H264NalParser::locatePPS() {
 bool H264NalParser::locateIDR() {
     while (locateNextNal()) {
         if (length() == 0) continue;
-        if (type() != kIDRType) continue;
+        if (type() != NalUnitType::H264_NAL_SLICE_IDR) continue;
         return true;
     }
 
