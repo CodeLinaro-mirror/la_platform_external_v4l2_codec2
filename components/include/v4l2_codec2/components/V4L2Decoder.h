@@ -44,9 +44,10 @@ public:
 
 private:
     enum class State {
-        Idle,  // Not received any decode buffer after initialized, flushed, or drained.
-        Decoding,
-        Draining,
+        Idle,       // Not received any decode buffer after initialized, flushed, or drained.
+        Init,       // Received first input buffer but not send frame for decoding.
+        Decoding,   // Start sending frame for decoding.
+        Draining,   // Start draining.
         Error,
     };
     static const char* StateToString(State state);
@@ -108,6 +109,9 @@ private:
 
     // Contains the initial EOS buffer, until DRC event is dequeued.
     sp<GraphicBuffer> mInitialEosBuffer;
+
+    // Current input buffer.
+    std::optional<V4L2WritableBufferRef> mInputBuffer;
 
     std::queue<DecodeRequest> mDecodeRequests;
     std::map<int32_t, DecodeCB> mPendingDecodeCbs;
