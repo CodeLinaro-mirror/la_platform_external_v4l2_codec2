@@ -111,6 +111,26 @@ C2R V4L2DecodeInterface::MergedColorAspectsSetter(
 }
 
 // static
+// Imported from: frameworks/av/media/codec2/components/avc/C2SoftAvcDec.cpp
+C2R V4L2DecodeInterface::ColorAspectsSetter(
+        bool mayBlock, C2P<C2StreamColorAspectsInfo::output> &me,
+        const C2P<C2StreamColorAspectsTuning::output> &def,
+        const C2P<C2StreamColorAspectsInfo::input> &coded) {
+    (void)mayBlock;
+
+    // take default values for all unspecified fields, and coded values for specified ones
+    me.set().range = coded.v.range == RANGE_UNSPECIFIED ? def.v.range : coded.v.range;
+    me.set().primaries = coded.v.primaries == PRIMARIES_UNSPECIFIED
+        ? def.v.primaries : coded.v.primaries;
+    me.set().transfer = coded.v.transfer == TRANSFER_UNSPECIFIED
+        ? def.v.transfer : coded.v.transfer;
+    me.set().matrix = coded.v.matrix == MATRIX_UNSPECIFIED ? def.v.matrix : coded.v.matrix;
+
+    return C2R::Ok();
+}
+
+
+// static
 C2R V4L2DecodeInterface::MaxInputBufferSizeCalculator(
         bool /* mayBlock */, C2P<C2StreamMaxBufferSizeInfo::input>& me,
         const C2P<C2StreamPictureSizeInfo::output>& size) {
@@ -345,6 +365,28 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                                      .inRange(C2Color::MATRIX_UNSPECIFIED, C2Color::MATRIX_OTHER)})
                     .withSetter(DefaultColorAspectsSetter)
                     .build());
+
+    addParameter(
+            DefineParam(mColorAspects, C2_PARAMKEY_COLOR_ASPECTS)
+                    .withDefault(new C2StreamColorAspectsInfo::output(
+                            0u, C2Color::RANGE_UNSPECIFIED, C2Color::PRIMARIES_UNSPECIFIED,
+                            C2Color::TRANSFER_UNSPECIFIED, C2Color::MATRIX_UNSPECIFIED))
+                    .withFields(
+                           {C2F(mColorAspects, range)
+                                     .inRange(C2Color::RANGE_UNSPECIFIED,
+                                              C2Color::RANGE_OTHER),
+                            C2F(mColorAspects, primaries)
+                                     .inRange(C2Color::PRIMARIES_UNSPECIFIED,
+                                              C2Color::PRIMARIES_OTHER),
+                            C2F(mColorAspects, transfer)
+                                     .inRange(C2Color::TRANSFER_UNSPECIFIED,
+                                              C2Color::TRANSFER_OTHER),
+                            C2F(mColorAspects, matrix)
+                                     .inRange(C2Color::MATRIX_UNSPECIFIED,
+                                              C2Color::MATRIX_OTHER)})
+                    .withSetter(ColorAspectsSetter, mDefaultColorAspects, mCodedColorAspects)
+                    .build());
+
 
     // Currently we support two output pixel formats:
     // RGBX_8888 - default for this platform
