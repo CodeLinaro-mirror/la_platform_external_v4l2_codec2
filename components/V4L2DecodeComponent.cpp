@@ -446,8 +446,8 @@ void V4L2DecodeComponent::pumpPendingWorks() {
             mIsDraining = true;
         }
 
-        // Directly report the empty CSD and non-EOS work as finished.
-        if (isEmptyWork && !isEOSWork) {
+        // Directly report the empty work as finished.
+        if (isEmptyWork) {
             work->worklets.front()->output.flags = C2FrameData::FLAG_DROP_FRAME;
             reportWorkIfFinished(bitstreamId);
             return;
