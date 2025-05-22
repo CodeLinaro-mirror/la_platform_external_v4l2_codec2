@@ -98,7 +98,9 @@ private:
                                                      const bool isEmptyWork);
     
     // Process work buffer by creating bitstream buffer from it and send for decoding if needed.
-    void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock, const uint8_t flags);
+    void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock,
+                                                      const size_t offset,
+                                                      const uint8_t flags);
 
     // Get the buffer pool.
     std::unique_ptr<VideoFramePool> getVideoFramePool(const ui::Size& size,

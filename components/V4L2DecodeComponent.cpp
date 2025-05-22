@@ -513,7 +513,7 @@ void V4L2DecodeComponent::sendLastAccessUnit() {
         C2ConstLinearBlock block = 
             it->second.get()->input.buffers.front()->data().linearBlocks().front();
         uint8_t flags = ConstBitstreamBuffer::StatusFlag::Send;
-        processWorkBuffer(id, block, flags);
+        processWorkBuffer(id, block, 0, flags);
         ALOGV("Send last Access Unit bitstreamId=%ld", id);
     }
 }
@@ -566,6 +566,8 @@ void V4L2DecodeComponent::processInputWork(const int64_t bitstreamId, const C2Wo
     C2ConstLinearBlock linearBlock =
             work->input.buffers.front()->data().linearBlocks().front();
     ALOG_ASSERT(linearBlock.size() > 0u, "Input buffer of work(%ld) is empty.", bitstreamId);
+
+    size_t offset = linearBlock.offset();
 
     switch (codec.value()) {
     case VideoCodec::VP9:
@@ -626,7 +628,7 @@ void V4L2DecodeComponent::processInputWork(const int64_t bitstreamId, const C2Wo
                     mInputBitstreamIds.push_back(bitstreamId);
                     mNalParser->popAccessUnit();
                 } else {
-                    processWorkBuffer(bitstreamId, linearBlock, flags);
+                    processWorkBuffer(bitstreamId, linearBlock, offset, flags);
                     flags = ConstBitstreamBuffer::StatusFlag::Init;
                     mInputAUAlign = false;
                     mInputBitstreamIds.push_back(bitstreamId);
@@ -641,19 +643,21 @@ void V4L2DecodeComponent::processInputWork(const int64_t bitstreamId, const C2Wo
            mNalParser->clearAccessUnits();
         }
 
+        offset = 0;
+
         break;
     }
 
-    processWorkBuffer(bitstreamId, linearBlock, flags);
+    processWorkBuffer(bitstreamId, linearBlock, offset, flags);
 }
 
-void V4L2DecodeComponent::processWorkBuffer(const int64_t bitstreamId,
-                                            const C2ConstLinearBlock& linearBlock, const uint8_t flags) {
+void V4L2DecodeComponent::processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock, 
+                                            const size_t offset, const uint8_t flags) {
 
     C2ReadView view = linearBlock.map().get();
     
     std::unique_ptr<ConstBitstreamBuffer> buffer = std::make_unique<ConstBitstreamBuffer>(
-                    bitstreamId, linearBlock, linearBlock.offset(), linearBlock.size(), view.data(), flags);
+                    bitstreamId, linearBlock, offset, linearBlock.size(), view.data(), flags);
     if (!buffer) {
         reportError(C2_CORRUPTED);
         return;
