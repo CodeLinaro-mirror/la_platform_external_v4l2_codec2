@@ -424,6 +424,13 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                                          mCodedColorAspects)
                              .build());
     }
+
+    addParameter(
+            DefineParam(mLowLatencyMode, C2_PARAMKEY_LOW_LATENCY_MODE)
+                    .withDefault(new C2GlobalLowLatencyModeTuning(0))
+                    .withFields({C2F(mLowLatencyMode, value).oneOf({0,1})})
+                    .withSetter(Setter<decltype(*mLowLatencyMode)>::StrictValueWithNoDeps)
+                    .build());
 }
 
 size_t V4L2DecodeInterface::getInputBufferSize() const {
@@ -462,6 +469,10 @@ uint32_t V4L2DecodeInterface::getOutputDelay(VideoCodec codec) {
     case VideoCodec::VP9:
         return 0;
     }
+}
+
+bool V4L2DecodeInterface::getLowLatencyMode() {
+   return mLowLatencyMode->value;
 }
 
 }  // namespace android
