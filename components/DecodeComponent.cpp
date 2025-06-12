@@ -496,6 +496,17 @@ void DecodeComponent::processInputWork(const int64_t bitstreamId, const C2Work* 
 
         // Parse NAL units from current input buffer.
         bool completed = mNalParser->parse();
+        
+        // If low-latency mode is valid do not wait for next frame VCL NAL.
+        // When VLC found in current frame set AU completed and send it immediately.
+        if (mLowLatencyMode) {
+            NalParser::AccessUnit* au = mNalParser->frontAccessUnit();
+            ALOG_ASSERT(au, "Parsing Access Unit failure");
+            if (au->vclFound) {
+                completed = true;
+            }
+        }
+        
         if (!completed){
             // If input is not AU-align cache data in v4l2 buffer.
             // For first input of current AU set Init flag to initalized v4l2 buffer.
@@ -522,8 +533,7 @@ void DecodeComponent::processInputWork(const int64_t bitstreamId, const C2Work* 
                 flags |= ConstBitstreamBuffer::StatusFlag::Init;
             } else {
                 NalParser::AccessUnit* au = mNalParser->frontAccessUnit();
-                ALOG_ASSERT(au, "Parsing Access Unit failure");
-                if (au->completed) {
+                if (!au || au->completed) {
                     flags |= ConstBitstreamBuffer::StatusFlag::Append;
                     mInputBitstreamIds.push_back(bitstreamId);
                     mNalParser->popAccessUnit();
