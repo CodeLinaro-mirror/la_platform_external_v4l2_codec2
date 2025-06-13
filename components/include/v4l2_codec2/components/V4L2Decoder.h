@@ -34,6 +34,7 @@ public:
             const VideoCodec& codec, const size_t inputBufferSize, const size_t minNumOutputBuffers, 
             const HalPixelFormat outputPixelFormat,
             const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects,
+            const bool lowLatency,
             GetPoolCB getPoolCB, OutputCB outputCb, ErrorCB errorCb,
             scoped_refptr<::base::SequencedTaskRunner> taskRunner);
     ~V4L2Decoder() override;
@@ -66,6 +67,7 @@ private:
     bool start(const VideoCodec& codec, const size_t inputBufferSize,
                const size_t minNumOutputBuffers, const HalPixelFormat outputPixelFormat,
                const std::shared_ptr<C2StreamColorAspectsInfo::output>& outputColorAspects,
+               const bool lowLatency,
                GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb);
     bool setupInputFormat(const uint32_t inputPixelFormat, const size_t inputBufferSize,
                           const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects);
@@ -80,6 +82,8 @@ private:
     // Allocates the at least |minOutputBuffersCount| of output buffers using set format
     bool startOutputQueue(size_t minOutputBuffersCount, enum v4l2_memory memory,
         const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects);
+    // Configure required and optional controls on the V4L2 device.
+    bool configureDevice(const bool lowLatency);
 
     void pumpDecodeRequest();
 
