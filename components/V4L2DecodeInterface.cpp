@@ -234,7 +234,8 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                                                      C2Config::LEVEL_HEVC_HIGH_4_1,
                                                      C2Config::LEVEL_HEVC_HIGH_5,
                                                      C2Config::LEVEL_HEVC_HIGH_5_1,
-                                                     C2Config::LEVEL_HEVC_HIGH_5_2})})
+                                                     C2Config::LEVEL_HEVC_HIGH_5_2,
+                                                     C2Config::LEVEL_HEVC_HIGH_6})})
                         .withSetter(ProfileLevelSetter)
                         .build());
         break;
