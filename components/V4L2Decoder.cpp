@@ -125,11 +125,12 @@ std::unique_ptr<VideoDecoder> V4L2Decoder::Create(
         const VideoCodec& codec, const size_t inputBufferSize, const size_t minNumOutputBuffers,
         const HalPixelFormat outputPixelFormat,
         const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects,
+        const bool lowLatency,
         GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb,
         scoped_refptr<::base::SequencedTaskRunner> taskRunner) {
     std::unique_ptr<V4L2Decoder> decoder =
             ::base::WrapUnique<V4L2Decoder>(new V4L2Decoder(taskRunner));
-    if (!decoder->start(codec, inputBufferSize, minNumOutputBuffers, outputPixelFormat, colorAspects,
+    if (!decoder->start(codec, inputBufferSize, minNumOutputBuffers, outputPixelFormat, colorAspects, lowLatency,
                         std::move(getPoolCb), std::move(outputCb), std::move(errorCb))) {
         return nullptr;
     }
@@ -173,6 +174,7 @@ V4L2Decoder::~V4L2Decoder() {
 bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
                         const size_t minNumOutputBuffers, const HalPixelFormat outputPixelFormat,
                         const std::shared_ptr<C2StreamColorAspectsInfo::output>& outputColorAspects,
+                        const bool lowLatency,
                         GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb) {
     ALOGV("%s(codec=%s, inputBufferSize=%zu, minNumOutputBuffers=%zu)", __func__,
           VideoCodecToString(codec), inputBufferSize, minNumOutputBuffers);
@@ -239,6 +241,8 @@ bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
     }
 
     mInputBuffer.reset();
+
+    configureDevice(lowLatency);
     
     if (!setupInputFormat(inputPixelFormat, inputBufferSize, nullptr)) {
         ALOGE("Failed to setup input format.");
@@ -257,6 +261,20 @@ bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
     }
 
     setState(State::Idle);
+    return true;
+}
+
+bool V4L2Decoder::configureDevice(const bool lowLatency) {
+    ALOGV("%s()", __func__);
+    ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+
+    if (lowLatency) {
+        if (!mDevice->setExtCtrls(V4L2_CTRL_CLASS_MPEG, {V4L2ExtCtrl(V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY, 0),
+                                                         V4L2ExtCtrl(V4L2_CID_MPEG_VIDEO_DEC_DISPLAY_DELAY_ENABLE, true)})) {
+            ALOGW("Failed low-latency mode enable");
+        }
+    }
+
     return true;
 }
 
