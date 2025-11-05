@@ -67,8 +67,11 @@ public:
         H264_NAL_SLICE_DEPTH  = 21
     };
 
+    H264NalParser();
     H264NalParser(const uint8_t* data, size_t length);
     ~H264NalParser() = default;
+
+    bool parse() override;
 
     // Locate the sequence parameter set (SPS).
     bool locateSPS() override;

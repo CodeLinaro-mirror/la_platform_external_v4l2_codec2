@@ -73,7 +73,92 @@ bool skipScalingMatrix(ABitReader* br, size_t numScalingLists) {
 
 }  // namespace
 
+H264NalParser::H264NalParser() : NalParser() {}
 H264NalParser::H264NalParser(const uint8_t* data, size_t length) : NalParser(data, length) {}
+
+// H264 NALs unit parser to AU-alignment check.
+// Implementation is similar to GStreamer H264 parser and use the same conditions to
+// complete Access Unit.
+// NOTE this is not entirely according to Access Unit specs in 7.4.1.2.4,
+// but in practice it works in common cases.
+// For example we do not parse VCL NAL header to check if this is a "Redundant Coded Picture" 
+// for the previously copied "Primary Coded Picture".
+bool H264NalParser::parse() {
+    reset();
+
+    // Check if NAL is VCL (coded slice) unit.
+    auto isVcl = [](uint8_t t) {
+        return t >= NalUnitType::H264_NAL_SLICE &&
+               t <= NalUnitType::H264_NAL_SLICE_IDR;
+    };
+
+    // Check if NAL is specific non-VCL (coded slice) unit, e.g. SEI, PPS or SPS.
+    auto isNonVcl = [](uint8_t t) {
+        return (t >= NalUnitType::H264_NAL_SEI &&
+               t <= NalUnitType::H264_NAL_PPS) || 
+               (t >= NalUnitType::H264_NAL_PREFIX_UNIT && 
+               t < NalUnitType::H264_NAL_SLICE_AUX);
+    };
+
+    // Check if first_mb_in_slice == 0
+    // first_mb_in_slice is an unsigned Exp-Golomb-coded field 
+    // that indicates the macroblock address of the first macroblock in the slice.
+    // first_mb_in_slice = 0 means this slice starts at the top-left of the frame
+    // which indicates start of a new frame.
+    auto isNewFrame = [this]() {
+        // Skip NAL header.
+        NALBitReader br(this->mCurrNalDataPos + 1, length() - 1);
+
+        uint32_t firstMbInSlice;
+        if (!parseUE(&br, &firstMbInSlice)) { // first_mb_in_slice
+            return false;
+        }   
+        if (firstMbInSlice == 0) {
+            return true;
+        }
+
+        return false;
+    };
+
+    uint8_t nalType = 0;
+    AccessUnit* au = getAccessUnitSlot();
+
+    while (locateNextNal()) {
+        nalType = type();
+        // AUD found - complete current AU if it is not empty.
+        if (nalType == NalUnitType::H264_NAL_AU_DELIMITER) {
+            if (!au->nals.empty()) {
+                au->completed = true;
+                au = getAccessUnitSlot();
+            }
+        }
+
+        // Found specific non-VCL unit - complete AU if VCL is already in AU. 
+        if (isNonVcl(nalType)) {
+            if (au->vclFound) {
+                // Specific non-VCL found → marks start of next AU
+                au->completed = true;
+                au = getAccessUnitSlot();
+            }
+        }
+
+        // Found VCL unit - mark vclFound if it is first VCL in AU.
+        // Complete AU if VCL is already in AU. 
+        if (isVcl(nalType)) {
+            if (au->vclFound && isNewFrame()) {
+                // Next VCL found → marks start of next AU
+                au->completed = true;
+                au = getAccessUnitSlot();
+            }
+            au->vclFound = true;
+        }
+
+        au->nals.push_back(nalType);
+    }
+
+    // Return true if AU completed.
+    return mAccessUnits.size() > 1;
+}
 
 bool H264NalParser::locateSPS() {
     while (locateNextNal()) {
@@ -113,7 +198,11 @@ uint8_t H264NalParser::type() const {
 
 bool H264NalParser::findCodedColorAspects(ColorAspects* colorAspects) {
     ALOG_ASSERT(colorAspects);
-    ALOG_ASSERT(type() == kSPSType);
+
+    reset();
+    if (!locateSPS()) {
+        return false;
+    }
 
     // Unfortunately we can't directly jump to the Video Usability Information (VUI) parameters that
     // contain the color aspects. We need to parse the entire SPS header up until the values we

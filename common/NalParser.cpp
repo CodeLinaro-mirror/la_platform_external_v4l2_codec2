@@ -17,9 +17,25 @@
 
 namespace android {
 
+NalParser::NalParser()
+      : mDataStart(nullptr), mCurrNalDataPos(nullptr), mDataEnd(nullptr), mNextNalStartCodePos(nullptr)  {
+}
+
 NalParser::NalParser(const uint8_t* data, size_t length)
-      : mCurrNalDataPos(data), mDataEnd(data + length) {
+      : mDataStart(data), mCurrNalDataPos(data), mDataEnd(data + length) {
     mNextNalStartCodePos = findNextStartCodePos();
+}
+
+bool NalParser::loadData(const uint8_t* data, size_t length) {
+    if (data == nullptr) {
+        return false;
+    }
+    mDataStart = data;
+    mCurrNalDataPos = data;
+    mDataEnd = data + length;
+    mNextNalStartCodePos = findNextStartCodePos();
+
+    return true;
 }
 
 bool NalParser::locateNextNal() {
@@ -52,6 +68,11 @@ void NalParser::popAccessUnit() {
 
 void NalParser::clearAccessUnits() {
     mAccessUnits.clear();
+}
+
+void NalParser::reset() {
+    mCurrNalDataPos = mDataStart;
+    mNextNalStartCodePos = findNextStartCodePos();
 }
 
 const uint8_t* NalParser::data() const {

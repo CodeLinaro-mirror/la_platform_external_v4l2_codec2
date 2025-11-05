@@ -21,6 +21,7 @@
 #include <base/synchronization/waitable_event.h>
 #include <base/threading/thread.h>
 
+#include <v4l2_codec2/common/NalParser.h>
 #include <v4l2_codec2/components/V4L2DecodeInterface.h>
 #include <v4l2_codec2/components/VideoDecoder.h>
 #include <v4l2_codec2/components/VideoFramePool.h>
@@ -74,14 +75,30 @@ private:
     // Try to process pending works at |mPendingWorks|. Paused when |mIsDraining| is set.
     void pumpPendingWorks();
 
-    // Check if cached CSD input is Access Unit aligned.
-    bool checkCSDInputAUAligned(const C2Work* work);
+    // Try to find coded color aspects in SPS NAL. 
+    // Return false if SPS is not valid or color description does not exist.
+    // If we find color aspects settings convert them to ColorUtils::ColorAspects
+    // and return true. 
+    bool getCodedColorAspectsFromBitstream(C2StreamColorAspectsInfo::input* codedAspects);
+    
+    // Try to get coded color aspects from bitstream.
+    // If new settings found trigger color aspects change. 
+    void checkCodedColorAspects(const C2Work* work);
 
-    void processCSDWork(const int64_t bitstreamId, const C2Work* work);
-    // Process cached CSD input if they are Access Unit aligned. Start decoding aligned data.
-    void processCompleteCSDWork(const int64_t bitstreamId, const C2Work* work);
-    void processWork(const int64_t bitstreamId, const C2Work* work);
-    void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock);
+    // Get last input work of current AU and trigger send action with it.
+    void sendLastAccessUnit();
+
+    // Report Access Unit works as dropped frame.
+    void reportAccessUnitWorks();
+
+    // Process input work and check it content to trigger proper decoding action. 
+    void processInputWork(const int64_t bitstreamId, const C2Work* work, 
+                                                     const bool isCSDWork, 
+                                                     const bool isEOSWork, 
+                                                     const bool isEmptyWork);
+    
+    // Process work buffer by creating bitstream buffer from it and send for decoding if needed.
+    void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock, const uint8_t flags);
 
     // Get the buffer pool.
     std::unique_ptr<VideoFramePool> getVideoFramePool(const ui::Size& size,
@@ -119,13 +136,12 @@ private:
     // The queue of works that haven't processed and sent to |mDecoder|.
     std::queue<std::unique_ptr<C2Work>> mPendingWorks;
 
-    // Stores first CSD bitstream id if CSD input is not AU-align.
-    int64_t mCsdBitstreamId = 0;
-    // Buffer to cached CSD input data if it is not AU-align.
-    std::vector<uint8_t> mCachedCsd;
-    // Flag that tells if CSD input is AU-align. False means that
-    // CSD input is not AU-align and we cache data from it.  
-    bool mCsdInputComplate = true;
+    // The common NALs parser.
+    std::unique_ptr<NalParser> mNalParser;
+    // Flag that tells if input is AU-align.  
+    bool mInputAUAlign = true;
+    // Stores input buffers bitstream IDs if they are not AU-align.
+    std::deque<int64_t> mInputBitstreamIds;
 
     // The works whose input buffers are sent to |mDecoder|. The key is the
     // bitstream ID of work's input buffer.
