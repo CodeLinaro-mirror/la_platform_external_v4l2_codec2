@@ -63,7 +63,7 @@ namespace android {
 
 struct v4l2_format buildV4L2Format(const enum v4l2_buf_type type, uint32_t fourcc,
                                    const ui::Size& size, size_t buffer_size, uint32_t stride,
-                                   const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects) {
+                                   const C2ColorAspectsStruct *c2ColorAspects) {
     struct v4l2_format format;
     memset(&format, 0, sizeof(format));
     format.type = type;
@@ -79,49 +79,85 @@ struct v4l2_format buildV4L2Format(const enum v4l2_buf_type type, uint32_t fourc
 
     // Translate Codec2 color aspects to V4L2 color aspects.
     // Based on https://gstreamer.freedesktop.org/documentation/video/video-color.html?gi-language=c
-    if (colorAspects) {
+    if (c2ColorAspects) {
+        ALOGD("DBG: isOUT:%d color aspects C2 R:%d P:%d T:%d M:%d",
+            V4L2_TYPE_IS_OUTPUT(type),
+            c2ColorAspects->range,
+            c2ColorAspects->primaries,
+            c2ColorAspects->transfer,
+            c2ColorAspects->matrix);
+
         // Codec2 range is V4L2 quantization.
-        switch (colorAspects->range) {
-        case C2Color::RANGE_FULL:
-            format.fmt.pix_mp.quantization = V4L2_QUANTIZATION_FULL_RANGE;
+        switch (c2ColorAspects->range) {
+        case C2Color::RANGE_LIMITED: // 2
+            format.fmt.pix_mp.quantization = V4L2_QUANTIZATION_LIM_RANGE; // 2
             break;
-        case C2Color::RANGE_LIMITED:
-            format.fmt.pix_mp.quantization = V4L2_QUANTIZATION_LIM_RANGE;
+        case C2Color::RANGE_FULL: // 1
+            format.fmt.pix_mp.quantization = V4L2_QUANTIZATION_FULL_RANGE; // 1
             break;
+        case C2Color::RANGE_UNSPECIFIED: // 0
         default:
-            format.fmt.pix_mp.quantization = V4L2_QUANTIZATION_DEFAULT;
+            format.fmt.pix_mp.quantization = V4L2_QUANTIZATION_DEFAULT; // 0
             break;
         }
-        // Codec2 primaries is V4L2 colorspace.
-        switch (colorAspects->primaries) {
-        case C2Color::PRIMARIES_BT709:
-            format.fmt.pix_mp.colorspace = V4L2_COLORSPACE_REC709;
+
+        // Codec2 primaries is V4L2 colorspace
+        switch (c2ColorAspects->primaries) {
+        case C2Color::PRIMARIES_BT601_525: // 4 (NTSC)
+            format.fmt.pix_mp.colorspace = V4L2_COLORSPACE_SMPTE170M; // 1 (NTSC/PAL)
             break;
-        case C2Color::PRIMARIES_BT601_525:
-            format.fmt.pix_mp.colorspace = V4L2_COLORSPACE_SMPTE170M;
+        case C2Color::PRIMARIES_BT601_625: // 3 (PAL)
+            format.fmt.pix_mp.colorspace = V4L2_COLORSPACE_470_SYSTEM_BG; // 6 (PAL)
             break;
+        case C2Color::PRIMARIES_BT709: // 1
+            format.fmt.pix_mp.colorspace = V4L2_COLORSPACE_REC709; // 3
+            break;
+        case C2Color::PRIMARIES_UNSPECIFIED: // 0
         default:
-            format.fmt.pix_mp.colorspace = V4L2_COLORSPACE_DEFAULT;
+            format.fmt.pix_mp.colorspace = V4L2_COLORSPACE_DEFAULT; // 0
             break;
         }
         // Codec2 transfer is V4L2 xfer_func.
-        switch (colorAspects->transfer) {
+        switch (c2ColorAspects->transfer) {
+        case C2Color::TRANSFER_170M: // 3
+            format.fmt.pix_mp.xfer_func = V4L2_XFER_FUNC_709; // 1
+            break;
+        case C2Color::TRANSFER_SRGB: // 2
+            format.fmt.pix_mp.xfer_func = V4L2_XFER_FUNC_SRGB; // 2
+            break;
+        case C2Color::TRANSFER_LINEAR: // 1
+            format.fmt.pix_mp.xfer_func = V4L2_XFER_FUNC_NONE; // 5
+            break;
+        case C2Color::TRANSFER_UNSPECIFIED: // 0
         default:
-            format.fmt.pix_mp.xfer_func = V4L2_XFER_FUNC_DEFAULT;
+            format.fmt.pix_mp.xfer_func = V4L2_XFER_FUNC_DEFAULT; // 0
             break;
         }
+
         // Codec2 matrix is V4L2 ycbcr_enc.
-        switch (colorAspects->matrix) {
+        switch (c2ColorAspects->matrix) {
+        case C2Color::MATRIX_BT601: // 3
+            format.fmt.pix_mp.ycbcr_enc = V4L2_YCBCR_ENC_601; // 1
+            break;
+        case C2Color::MATRIX_BT709: // 1
+            format.fmt.pix_mp.ycbcr_enc = V4L2_YCBCR_ENC_709; // 2
+            break;
+        case C2Color::MATRIX_UNSPECIFIED: // 0
         default:
-            format.fmt.pix_mp.ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
+            format.fmt.pix_mp.ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT; // 0
             break;
         }
+
+        ALOGD("DBG: isOUT:%d color aspects V4L2 R:%d P:%d T:%d M:%d",
+            V4L2_TYPE_IS_OUTPUT(type),
+            format.fmt.pix_mp.quantization,
+            format.fmt.pix_mp.colorspace,
+            format.fmt.pix_mp.xfer_func,
+            format.fmt.pix_mp.ycbcr_enc);
     }
 
     return format;
 }
-
-
 
 V4L2ExtCtrl::V4L2ExtCtrl(uint32_t id) {
     memset(&ctrl, 0, sizeof(ctrl));
@@ -805,8 +841,8 @@ V4L2Queue::~V4L2Queue() {
 
 std::optional<struct v4l2_format> V4L2Queue::setFormat(uint32_t fourcc, const ui::Size& size,
                                                        size_t bufferSize, uint32_t stride,
-                                                       const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects) {
-    struct v4l2_format format = buildV4L2Format(mType, fourcc, size, bufferSize, stride, colorAspects);
+                                                       const C2ColorAspectsStruct *c2ColorAspects) {
+    struct v4l2_format format = buildV4L2Format(mType, fourcc, size, bufferSize, stride, c2ColorAspects);
     if (mDevice->ioctl(VIDIOC_S_FMT, &format) != 0 || format.fmt.pix_mp.pixelformat != fourcc) {
         ALOGEQ("Failed to set format (format_fourcc=0x%" PRIx32 ")", fourcc);
         return std::nullopt;
@@ -818,7 +854,7 @@ std::optional<struct v4l2_format> V4L2Queue::setFormat(uint32_t fourcc, const ui
 
 std::optional<struct v4l2_format> V4L2Queue::tryFormat(uint32_t fourcc, const ui::Size& size,
                                                        size_t bufferSize) {
-    struct v4l2_format format = buildV4L2Format(mType, fourcc, size, bufferSize, 0, {});
+    struct v4l2_format format = buildV4L2Format(mType, fourcc, size, bufferSize, 0, nullptr);
     if (mDevice->ioctl(VIDIOC_TRY_FMT, &format) != 0 || format.fmt.pix_mp.pixelformat != fourcc) {
         ALOGEQ("Tried format not supported (format_fourcc=0x%" PRIx32 ")", fourcc);
         return std::nullopt;

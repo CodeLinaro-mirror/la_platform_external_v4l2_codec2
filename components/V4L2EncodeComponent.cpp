@@ -712,6 +712,7 @@ bool V4L2EncodeComponent::initializeEncoder() {
             outputProfile, h264Level, mInterface->getInputVisibleSize(), *stride,
             mInterface->getKeyFramePeriod(), mBitrateMode, mBitrate,
             mBitrate * kPeakBitrateMultiplier,
+            mInterface->getColorAspects(),
             ::base::BindRepeating(&V4L2EncodeComponent::fetchOutputBlock, mWeakThis),
             ::base::BindRepeating(&V4L2EncodeComponent::onInputBufferDone, mWeakThis),
             ::base::BindRepeating(&V4L2EncodeComponent::onOutputBufferDone, mWeakThis),

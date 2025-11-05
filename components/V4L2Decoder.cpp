@@ -124,7 +124,7 @@ bool waitForDRC(const C2ConstLinearBlock& input, std::optional<VideoCodec> codec
 std::unique_ptr<VideoDecoder> V4L2Decoder::Create(
         const VideoCodec& codec, const size_t inputBufferSize, const size_t minNumOutputBuffers,
         const HalPixelFormat outputPixelFormat,
-        const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects,
+        const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects,
         GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb,
         scoped_refptr<::base::SequencedTaskRunner> taskRunner) {
     std::unique_ptr<V4L2Decoder> decoder =
@@ -171,13 +171,14 @@ V4L2Decoder::~V4L2Decoder() {
 
 bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
                         const size_t minNumOutputBuffers, const HalPixelFormat outputPixelFormat,
-                        const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects,
+                        const std::shared_ptr<C2StreamColorAspectsInfo::output>& outputColorAspects,
                         GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb) {
     ALOGV("%s(codec=%s, inputBufferSize=%zu, minNumOutputBuffers=%zu)", __func__,
           VideoCodecToString(codec), inputBufferSize, minNumOutputBuffers);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
     mMinNumOutputBuffers = minNumOutputBuffers;
+    mOutputColorAspects = outputColorAspects;
     mOutputPixelFormat = outputPixelFormat;
     mGetPoolCb = std::move(getPoolCb);
     mOutputCb = std::move(outputCb);
@@ -226,11 +227,11 @@ bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
         ALOGE("Failed to create V4L2 queue.");
         return false;
     }
-    if (!setupInputFormat(inputPixelFormat, inputBufferSize, colorAspects)) {
+    if (!setupInputFormat(inputPixelFormat, inputBufferSize, nullptr)) {
         ALOGE("Failed to setup input format.");
         return false;
     }
-    if (!setupInitialOutput()) {
+    if (!setupInitialOutput(outputColorAspects)) {
         ALOGE("Unable to setup initial output");
         return false;
     }
@@ -247,11 +248,12 @@ bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
 }
 
 bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t inputBufferSize,
-                                   const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects) {
+                                   const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects) {
     ALOGV("%s(inputPixelFormat=%u, inputBufferSize=%zu)", __func__, inputPixelFormat,
           inputBufferSize);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
-
+    const C2ColorAspectsStruct *c2ColorAspects =
+        static_cast<const C2ColorAspectsStruct *>(colorAspects.get());
     // Check if the format is supported.
     std::vector<uint32_t> formats =
             mDevice->enumerateSupportedPixelformats(V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE);
@@ -262,7 +264,8 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
 
     // Setup the input format.
     // Allocate of initial buffers with minimum supported dimension, to avoid the issue with buffer allocation by the kernel due to size constraints.
-    auto format = mInputQueue->setFormat(inputPixelFormat, ui::Size(kMinimumSupportedWidth, kMinimumSupportedHeight), inputBufferSize, 0, colorAspects);
+    auto format = mInputQueue->setFormat(inputPixelFormat, ui::Size(kMinimumSupportedWidth,
+        kMinimumSupportedHeight), inputBufferSize, 0, c2ColorAspects);
     if (!format) {
         ALOGE("Failed to call IOCTL to set input format.");
         return false;
@@ -287,11 +290,12 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
     return true;
 }
 
-bool V4L2Decoder::setupInitialOutput() {
+bool V4L2Decoder::setupInitialOutput(
+    const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects) {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
-    if (!setupMinimalOutputFormat()) {
+    if (!setupMinimalOutputFormat(colorAspects)) {
         ALOGE("Failed to set minimal resolution for initial output buffers");
         return false;
     }
@@ -303,7 +307,7 @@ bool V4L2Decoder::setupInitialOutput() {
         memtype = V4L2_MEMORY_MMAP;
     }
 
-    if (!startOutputQueue(1, memtype)) {
+    if (!startOutputQueue(1, memtype, colorAspects)) {
         ALOGE("Failed to start initialy output queue");
         return false;
     }
@@ -343,8 +347,12 @@ bool V4L2Decoder::setupInitialOutput() {
     return true;
 }
 
-bool V4L2Decoder::setupMinimalOutputFormat() {
+bool V4L2Decoder::setupMinimalOutputFormat(
+    const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects) {
     ui::Size minResolution, maxResolution;
+
+    const C2ColorAspectsStruct *c2ColorAspects =
+        static_cast<const C2ColorAspectsStruct *>(colorAspects.get());
 
     for (const uint32_t& pixfmt :
          mDevice->enumerateSupportedPixelformats(V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)) {
@@ -359,7 +367,7 @@ bool V4L2Decoder::setupMinimalOutputFormat() {
             minResolution.set(96, 96);
         }
 
-        if (mOutputQueue->setFormat(pixfmt, minResolution, 0) != std::nullopt) {
+        if (mOutputQueue->setFormat(pixfmt, minResolution, 0, 0, c2ColorAspects) != std::nullopt) {
             return true;
         }
     }
@@ -368,8 +376,8 @@ bool V4L2Decoder::setupMinimalOutputFormat() {
     return false;
 }
 
-bool V4L2Decoder::startOutputQueue(size_t minOutputBuffersCount, enum v4l2_memory memory) {
-    ALOGV("%s()", __func__);
+bool V4L2Decoder::startOutputQueue(size_t minOutputBuffersCount, enum v4l2_memory memory,
+    const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects) {
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
     const std::optional<struct v4l2_format> format = getFormatInfo();
@@ -380,7 +388,7 @@ bool V4L2Decoder::startOutputQueue(size_t minOutputBuffersCount, enum v4l2_memor
     *numOutputBuffers = std::max(*numOutputBuffers, minOutputBuffersCount);
 
     const ui::Size codedSize(format->fmt.pix_mp.width, format->fmt.pix_mp.height);
-    if (!setupOutputFormat(codedSize)) {
+    if (!setupOutputFormat(codedSize, colorAspects)) {
         return false;
     }
 
@@ -617,19 +625,7 @@ void V4L2Decoder::flush() {
     setState(State::Idle);
 }
 
-void V4L2Decoder::serviceDeviceTask(bool event) {
-    ALOGV("%s(event=%d) state=%s InputQueue(%s):%zu+%zu/%zu, OutputQueue(%s):%zu+%zu/%zu", __func__,
-          event, StateToString(mState), (mInputQueue->isStreaming() ? "streamon" : "streamoff"),
-          mInputQueue->freeBuffersCount(), mInputQueue->queuedBuffersCount(),
-          mInputQueue->allocatedBuffersCount(),
-          (mOutputQueue->isStreaming() ? "streamon" : "streamoff"),
-          mOutputQueue->freeBuffersCount(), mOutputQueue->queuedBuffersCount(),
-          mOutputQueue->allocatedBuffersCount());
-    ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
-
-    if (mState == State::Error) return;
-
-    // Dequeue output and input queue.
+bool V4L2Decoder::dequeueInputQueue() {
     bool inputDequeued = false;
     while (mInputQueue->queuedBuffersCount() > 0) {
         bool success;
@@ -638,7 +634,7 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         if (!success) {
             ALOGE("Failed to dequeue buffer from input queue.");
             onError();
-            return;
+            return false;
         }
         if (!dequeuedBuffer) break;
 
@@ -657,6 +653,24 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         std::move(it->second).Run(VideoDecoder::DecodeStatus::kOk);
         mPendingDecodeCbs.erase(it);
     }
+
+    return inputDequeued;
+}
+
+void V4L2Decoder::serviceDeviceTask(bool event) {
+    ALOGV("%s(event=%d) state=%s InputQueue(%s):%zu+%zu/%zu, OutputQueue(%s):%zu+%zu/%zu", __func__,
+          event, StateToString(mState), (mInputQueue->isStreaming() ? "streamon" : "streamoff"),
+          mInputQueue->freeBuffersCount(), mInputQueue->queuedBuffersCount(),
+          mInputQueue->allocatedBuffersCount(),
+          (mOutputQueue->isStreaming() ? "streamon" : "streamoff"),
+          mOutputQueue->freeBuffersCount(), mOutputQueue->queuedBuffersCount(),
+          mOutputQueue->allocatedBuffersCount());
+    ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
+
+    if (mState == State::Error) return;
+
+    // Dequeue output and input queue.
+    bool inputDequeued = dequeueInputQueue();
 
     bool outputDequeued = false;
     while ((mOutputQueue->queuedBuffersCount() > 0) && mVideoFramePool) {
@@ -689,6 +703,15 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         mFrameAtDevice.erase(it);
 
         if (bytesUsed > 0) {
+             if (dequeuedBuffer->memory() == V4L2_MEMORY_MMAP) {
+                C2GraphicView graphicView = frame->getGraphicView();
+                if (graphicView.error() != C2_OK) {
+                    ALOGE("%s(): Get graphic view err = %d", __func__, graphicView.error());
+                    onError();
+                    return;
+                }
+                memcpy(*graphicView.data(), dequeuedBuffer->getPlaneMapping(0), bytesUsed);
+            }
             ALOGV("Send output frame(bitstreamId=%ld) to client", bitstreamId);
             frame->setBitstreamId(bitstreamId);
             frame->setVisibleRect(mVisibleRect);
@@ -718,6 +741,8 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         }
 
         if (mDrainCb && isLast) {
+            // Dequeue remaining input buffers before drain completed.
+            dequeueInputQueue();
             ALOGV("All buffers are drained.");
             sendV4L2DecoderCmd(true);
             std::move(mDrainCb).Run(VideoDecoder::DecodeStatus::kOk);
@@ -775,7 +800,7 @@ bool V4L2Decoder::changeResolution() {
         memtype = V4L2_MEMORY_MMAP;
     }
 
-    if (!startOutputQueue(mMinNumOutputBuffers, memtype)) {
+    if (!startOutputQueue(mMinNumOutputBuffers, memtype, mOutputColorAspects)) {
         ALOGE("Failed to start output queue during DRC.");
         return false;
     }
@@ -810,7 +835,8 @@ bool V4L2Decoder::changeResolution() {
     return true;
 }
 
-bool V4L2Decoder::setupOutputFormat(const ui::Size& size) {
+bool V4L2Decoder::setupOutputFormat(const ui::Size& size,
+    const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects) {
     uint32_t expectedOutputFormatPixel = HalPixelFormatToV4L2PixFmt(mOutputPixelFormat);
     uint32_t outputFormatPixel = 0;
     for (const uint32_t& pixfmt :
@@ -832,7 +858,10 @@ bool V4L2Decoder::setupOutputFormat(const ui::Size& size) {
     }
 
     if (outputFormatPixel) {
-        if (mOutputQueue->setFormat(outputFormatPixel, size, 0) != std::nullopt) {
+        const C2ColorAspectsStruct *c2ColorAspects =
+            static_cast<const C2ColorAspectsStruct *>(colorAspects.get());
+
+        if (mOutputQueue->setFormat(outputFormatPixel, size, 0, 0, c2ColorAspects) != std::nullopt) {
             return true;
         }
         else {

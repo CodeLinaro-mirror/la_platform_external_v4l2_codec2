@@ -220,6 +220,75 @@ C2R V4L2EncodeInterface::IntraRefreshPeriodSetter(bool mayBlock,
     return C2R::Ok();
 }
 
+// Follows: frameworks/av/media/codec2/components/avc/C2SoftAvcEnc.cpp
+// static
+C2R V4L2EncodeInterface::ColorAspectsSetter(
+        bool /* mayBlock */, C2P<C2StreamColorAspectsInfo::input>& def) {
+    ALOGD("DBG: %s, R:%d, P:%d, T:%d, M:%d",
+        __func__,
+        def.v.range,
+        def.v.primaries,
+        def.v.transfer,
+        def.v.matrix);
+
+    if (def.v.range > C2Color::RANGE_OTHER) {
+        def.set().range = C2Color::RANGE_OTHER;
+    }
+    if (def.v.primaries > C2Color::PRIMARIES_OTHER) {
+        def.set().primaries = C2Color::PRIMARIES_OTHER;
+    }
+    if (def.v.transfer > C2Color::TRANSFER_OTHER) {
+        def.set().transfer = C2Color::TRANSFER_OTHER;
+    }
+    if (def.v.matrix > C2Color::MATRIX_OTHER) {
+        def.set().matrix = C2Color::MATRIX_OTHER;
+    }
+    return C2R::Ok();
+}
+
+// static
+C2R V4L2EncodeInterface::CodedColorAspectsSetter(
+        bool /* mayBlock */, C2P<C2StreamColorAspectsInfo::output>& merged,
+        const C2P<C2StreamColorAspectsInfo::input>& coded) {
+    ALOGD("DBG: %s, R:%d, P:%d, T:%d, M:%d",
+        __func__,
+        coded.v.range,
+        coded.v.primaries,
+        coded.v.transfer,
+        coded.v.matrix);
+
+    merged.set().range = coded.v.range;
+    merged.set().primaries = coded.v.primaries;
+    merged.set().transfer = coded.v.transfer;
+    merged.set().matrix = coded.v.matrix;
+
+    return C2R::Ok();
+}
+
+c2_status_t V4L2EncodeInterface::queryColorAspects(
+    std::shared_ptr<C2StreamColorAspectsInfo::input>& targetColorAspects) {
+    // Default values are set by constructor to: '..._UNSPECIFIED'
+    std::shared_ptr<C2StreamColorAspectsInfo::input> colorAspects =
+        std::make_shared<C2StreamColorAspectsInfo::input>();
+    ALOGD("DBG: %s call query()", __func__);
+
+    c2_status_t status = query({colorAspects.get()}, {}, C2_DONT_BLOCK, nullptr);
+    if (status == C2_OK)
+        targetColorAspects = std::move(colorAspects);
+
+    if (targetColorAspects.get() != nullptr) {
+        ALOGD("DBG: %s, R:%d, P:%d, T:%d, M:%d", __func__,
+            (targetColorAspects)->range,
+            (targetColorAspects)->primaries,
+            (targetColorAspects)->transfer,
+            (targetColorAspects)->matrix);
+    } else {
+        ALOGE("%s: query() returned (null) colorAspects", __func__);
+    }
+
+    return status;
+}
+
 V4L2EncodeInterface::V4L2EncodeInterface(const C2String& name,
                                          std::shared_ptr<C2ReflectorHelper> helper)
       : C2InterfaceHelper(std::move(helper)) {
@@ -443,6 +512,51 @@ void V4L2EncodeInterface::Initialize(const C2String& name) {
                                  C2F(mOutputBlockPoolIds, m.values).inRange(0, 1)})
                     .withSetter(Setter<C2PortBlockPoolsTuning::output>::NonStrictValuesWithNoDeps)
                     .build());
+
+
+    // Info from: frameworks/av/media/codec2/sfplugin/CCodecConfig.cpp:
+    //  configure source aspects for encoders and read them back on the coded(!) port.
+    //  This is to ensure muxing the desired aspects into the container.
+    if (getCodecFromComponentName(name) == VideoCodec::H264) {
+            addParameter(
+                    DefineParam(mColorAspects, C2_PARAMKEY_COLOR_ASPECTS)
+                             .withDefault(new C2StreamColorAspectsInfo::input(
+                                     0u, C2Color::RANGE_UNSPECIFIED, C2Color::PRIMARIES_UNSPECIFIED,
+                                     C2Color::TRANSFER_UNSPECIFIED, C2Color::MATRIX_UNSPECIFIED))
+                             .withFields({C2F(mColorAspects, range)
+                                                  .inRange(C2Color::RANGE_UNSPECIFIED,
+                                                           C2Color::RANGE_OTHER),
+                                          C2F(mColorAspects, primaries)
+                                                  .inRange(C2Color::PRIMARIES_UNSPECIFIED,
+                                                           C2Color::PRIMARIES_OTHER),
+                                          C2F(mColorAspects, transfer)
+                                                  .inRange(C2Color::TRANSFER_UNSPECIFIED,
+                                                           C2Color::TRANSFER_OTHER),
+                                          C2F(mColorAspects, matrix)
+                                                  .inRange(C2Color::MATRIX_UNSPECIFIED,
+                                                           C2Color::MATRIX_OTHER)})
+                             .withSetter(ColorAspectsSetter)
+                             .build());
+
+            addParameter(
+                    DefineParam(mCodedColorAspects, C2_PARAMKEY_VUI_COLOR_ASPECTS)
+                            .withDefault(new C2StreamColorAspectsInfo::output(
+                                    0u, C2Color::RANGE_UNSPECIFIED, C2Color::PRIMARIES_UNSPECIFIED,
+                                    C2Color::TRANSFER_UNSPECIFIED, C2Color::MATRIX_UNSPECIFIED))
+                            .withFields(
+                                    {C2F(mCodedColorAspects, range)
+                                             .inRange(C2Color::RANGE_UNSPECIFIED, C2Color::RANGE_OTHER),
+                                     C2F(mCodedColorAspects, primaries)
+                                             .inRange(C2Color::PRIMARIES_UNSPECIFIED,
+                                                      C2Color::PRIMARIES_OTHER),
+                                     C2F(mCodedColorAspects, transfer)
+                                             .inRange(C2Color::TRANSFER_UNSPECIFIED,
+                                                      C2Color::TRANSFER_OTHER),
+                                     C2F(mCodedColorAspects, matrix)
+                                             .inRange(C2Color::MATRIX_UNSPECIFIED, C2Color::MATRIX_OTHER)})
+                            .withSetter(CodedColorAspectsSetter, mColorAspects)
+                            .build());
+    }
 
     mInitStatus = C2_OK;
 }
