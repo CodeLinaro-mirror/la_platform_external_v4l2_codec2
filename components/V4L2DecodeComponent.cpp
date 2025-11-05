@@ -339,7 +339,9 @@ void V4L2DecodeComponent::stopTask() {
 c2_status_t V4L2DecodeComponent::reset() {
     ALOGV("%s()", __func__);
 
-    return stop();
+    stop();
+
+    return C2_OK;
 }
 
 c2_status_t V4L2DecodeComponent::release() {
