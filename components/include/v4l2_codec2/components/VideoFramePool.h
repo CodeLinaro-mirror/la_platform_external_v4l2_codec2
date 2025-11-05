@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_COMPONENTS_VIDEO_FRAME_POOL_H
 #define ANDROID_V4L2_CODEC2_COMPONENTS_VIDEO_FRAME_POOL_H
 
@@ -63,18 +67,8 @@ private:
     // Returns true if a buffer shall not be handed to client.
     bool shouldDropBuffer(uint32_t bufferId);
 
-    // Ask |blockPool| to allocate the specified number of buffers.
-    // |bufferCount| is the number of requested buffers.
-    static c2_status_t requestNewBufferSet(C2BlockPool& blockPool, int32_t bufferCount,
-                                           const ui::Size& size, uint32_t format,
-                                           C2MemoryUsage usage);
-
     static std::optional<uint32_t> getBufferIdFromGraphicBlock(C2BlockPool& blockPool,
                                                                const C2Block2D& block);
-
-    // Ask |blockPool| to notify when a block is available via |cb|.
-    // Return true if |blockPool| supports notifying buffer available.
-    static bool setNotifyBlockAvailableCb(C2BlockPool& blockPool, ::base::OnceClosure cb);
 
     std::shared_ptr<C2BlockPool> mBlockPool;
 
@@ -83,6 +77,9 @@ private:
     size_t mMaxBufferCount;
     // Contains known buffer ids that are valid for the pool.
     std::set<uint32_t> mBuffers;
+    // Buffer counter to set buffer id for graphic frames 
+    // if it is not provided by block pool.
+    uint32_t mBufferIdCount;
 
     const ui::Size mSize;
     const HalPixelFormat mPixelFormat;

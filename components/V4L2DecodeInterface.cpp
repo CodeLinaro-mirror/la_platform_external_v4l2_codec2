@@ -27,7 +27,11 @@ namespace {
 constexpr size_t k1080pArea = 1920 * 1088;
 constexpr size_t k4KArea = 3840 * 2160;
 // Input bitstream buffer size for up to 1080p streams.
-constexpr size_t kInputBufferSizeFor1080p = 1024 * 1024;  // 1MB
+// Set it to 2MB since it is possible for the encoded bitstream to exceed the size of 1MB
+// when using higher bitrates, like 1Mb/s on slower devices. Also, this brings up compability
+// with the Chrome browser as it is using 2MB buffer size for a 1080p stream, ref:
+// https://source.chromium.org/chromium/chromium/src/+/main:media/gpu/gpu_video_encode_accelerator_helpers.cc;l=25
+constexpr size_t kInputBufferSizeFor1080p = 2 * 1024 * 1024;  // 2MB
 // Input bitstream buffer size for up to 4k streams.
 constexpr size_t kInputBufferSizeFor4K = 4 * kInputBufferSizeFor1080p;
 
@@ -156,7 +160,7 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
                                                  C2Config::LEVEL_AVC_3_2, C2Config::LEVEL_AVC_4,
                                                  C2Config::LEVEL_AVC_4_1, C2Config::LEVEL_AVC_4_2,
                                                  C2Config::LEVEL_AVC_5, C2Config::LEVEL_AVC_5_1,
-                                                 C2Config::LEVEL_AVC_5_2})})
+                                                 C2Config::LEVEL_AVC_5_2, C2Config::LEVEL_AVC_6})})
                         .withSetter(ProfileLevelSetter)
                         .build());
         break;
@@ -277,7 +281,7 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
     const C2Allocator::id_t inputAllocators[] = {secureMode ? V4L2AllocatorId::SECURE_LINEAR
                                                             : C2AllocatorStore::DEFAULT_LINEAR};
 
-    const C2Allocator::id_t outputAllocators[] = {V4L2AllocatorId::V4L2_BUFFERPOOL};
+    const C2Allocator::id_t outputAllocators[] = {C2PlatformAllocatorStore::GRALLOC};
     const C2Allocator::id_t surfaceAllocator =
             secureMode ? V4L2AllocatorId::SECURE_GRAPHIC : C2PlatformAllocatorStore::BUFFERQUEUE;
     const C2BlockPool::local_id_t outputBlockPools[] = {C2BlockPool::BASIC_GRAPHIC};
@@ -382,6 +386,35 @@ V4L2DecodeInterface::V4L2DecodeInterface(const std::string& name,
 
 size_t V4L2DecodeInterface::getInputBufferSize() const {
     return calculateInputBufferSize(mSize->width * mSize->height);
+}
+
+std::unique_ptr<C2StreamColorAspectsInfo::output> V4L2DecodeInterface::getColorAspects() const {
+    C2Color::range_t range = C2Color::RANGE_UNSPECIFIED;
+    C2Color::primaries_t primaries = C2Color::PRIMARIES_UNSPECIFIED;
+    C2Color::transfer_t transfer = C2Color::TRANSFER_UNSPECIFIED;
+    C2Color::matrix_t matrix = C2Color::MATRIX_UNSPECIFIED;
+    if (mColorAspects)
+    {
+        range = range != C2Color::RANGE_UNSPECIFIED ? range : mColorAspects->range;
+        primaries = primaries != C2Color::PRIMARIES_UNSPECIFIED ? primaries : mColorAspects->primaries;
+        transfer = transfer != C2Color::TRANSFER_UNSPECIFIED ? transfer : mColorAspects->transfer;
+        matrix = matrix != C2Color::MATRIX_UNSPECIFIED ? matrix : mColorAspects->matrix;
+    }
+    if (mDefaultColorAspects)
+    {
+        range = range != C2Color::RANGE_UNSPECIFIED ? range : mDefaultColorAspects->range;
+        primaries = primaries != C2Color::PRIMARIES_UNSPECIFIED ? primaries : mDefaultColorAspects->primaries;
+        transfer = transfer != C2Color::TRANSFER_UNSPECIFIED ? transfer : mDefaultColorAspects->transfer;
+        matrix = matrix != C2Color::MATRIX_UNSPECIFIED ? matrix : mDefaultColorAspects->matrix;
+    }
+    if (mCodedColorAspects)
+    {
+        range = range != C2Color::RANGE_UNSPECIFIED ? range : mCodedColorAspects->range;
+        primaries = primaries != C2Color::PRIMARIES_UNSPECIFIED ? primaries : mCodedColorAspects->primaries;
+        transfer = transfer != C2Color::TRANSFER_UNSPECIFIED ? transfer : mCodedColorAspects->transfer;
+        matrix = matrix != C2Color::MATRIX_UNSPECIFIED ? matrix : mCodedColorAspects->matrix;
+    }
+    return std::make_unique<C2StreamColorAspectsInfo::output>(0u, range, primaries, transfer, matrix);
 }
 
 c2_status_t V4L2DecodeInterface::queryColorAspects(

@@ -35,6 +35,7 @@ public:
     static uint32_t getOutputDelay(VideoCodec codec);
 
     size_t getInputBufferSize() const;
+    std::unique_ptr<C2StreamColorAspectsInfo::output> getColorAspects() const;
     c2_status_t queryColorAspects(
             std::shared_ptr<C2StreamColorAspectsInfo::output>* targetColorAspects);
 

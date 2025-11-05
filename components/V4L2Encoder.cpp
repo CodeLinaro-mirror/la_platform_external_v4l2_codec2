@@ -288,7 +288,7 @@ bool V4L2Encoder::initialize(C2Config::profile_t outputProfile, std::optional<ui
 void V4L2Encoder::handleEncodeRequest() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
-    ALOG_ASSERT(mState == State::ENCODING || mState == State::ERROR);
+    ALOG_ASSERT(mState == State::ENCODING || mState == State::ERROR || mState == State::WAITING_FOR_INPUT_FRAME);
 
     // If we're in the error state we can immediately return.
     if (mState == State::ERROR) {
@@ -313,8 +313,7 @@ void V4L2Encoder::handleEncodeRequest() {
         setState(State::WAITING_FOR_V4L2_BUFFER);
         return;
     }
-      
-    #ifdef FORCE_KEY_FRAME__FIXED
+
     // Request the next frame to be a key frame each time the counter reaches 0.
     if (mKeyFrameCounter == 0) {
         if (!mDevice->setExtCtrls(V4L2_CTRL_CLASS_MPEG,
@@ -324,7 +323,6 @@ void V4L2Encoder::handleEncodeRequest() {
             return;
         }
     }
-    #endif
     mKeyFrameCounter = (mKeyFrameCounter + 1) % mKeyFramePeriod;
 
     // Enqueue the input frame in the V4L2 device.
@@ -507,9 +505,8 @@ bool V4L2Encoder::configureInputFormat(VideoPixelFormat inputFormat, uint32_t st
         return false;
     }
 
-    // Calculate the input coded size from the format.
-    // TODO(dstaessens): How is this different from mInputLayout->coded_size()?
-    mInputCodedSize = V4L2Device::allocatedSizeFromV4L2Format(*format);
+    // Get the input coded size from input layout.
+    mInputCodedSize = mInputLayout->mCodedSize;
 
     // Configuring the input format might cause the output buffer size to change.
     auto outputFormat = mOutputQueue->getFormat();
@@ -967,6 +964,15 @@ bool V4L2Encoder::dequeueOutputBuffer() {
 
     std::unique_ptr<BitstreamBuffer> bitstreamBuffer =
             std::move(mOutputBuffers[buffer->bufferId()]);
+
+
+    if (buffer->memory() == V4L2_MEMORY_MMAP) {
+        C2WriteView writeView = bitstreamBuffer->dmabuf->map().get();
+        size_t write_offset =  buffer->getPlaneDataOffset(0);
+        ALOG_ASSERT(writeView.size() - write_offset >= encodedDataSize);
+        memcpy(writeView.data() + write_offset, buffer->getPlaneMapping(0), encodedDataSize);
+    }
+
     if (encodedDataSize > 0) {
         if (!mInjectParamsBeforeIDR) {
             // No need to inject SPS or PPS before IDR frames, we can just return the buffer as-is.
@@ -1042,7 +1048,7 @@ bool V4L2Encoder::createInputBuffers() {
     // No memory is allocated here, we just generate a list of buffers on the input queue, which
     // will hold memory handles to the real buffers.
     v4l2_memory memtype;
-    if (property_get_bool("ro.vendor.v4l2_codec2.use_dmabuf_inputqueue", false)) {
+    if (property_get_bool("ro.vendor.v4l2_codec2.encoder.use_dmabuf_inputqueue", true)) {
         memtype = V4L2_MEMORY_DMABUF;
     } else {
         memtype = V4L2_MEMORY_MMAP;
@@ -1067,7 +1073,7 @@ bool V4L2Encoder::createOutputBuffers() {
 
     // No memory is allocated here, we just generate a list of buffers on the output queue, which
     // will hold memory handles to the real buffers.
-    if (property_get_bool("ro.vendor.v4l2_codec2.use_dmabuf_outputqueue", false)) {
+    if (property_get_bool("ro.vendor.v4l2_codec2.encoder.use_dmabuf_outputqueue", true)) {
         memtype = V4L2_MEMORY_DMABUF;
     } else {
         memtype = V4L2_MEMORY_MMAP;

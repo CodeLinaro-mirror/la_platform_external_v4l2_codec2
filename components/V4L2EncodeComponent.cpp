@@ -257,10 +257,12 @@ V4L2EncodeComponent::~V4L2EncodeComponent() {
     if (mEncoderThread.IsRunning()) {
         mEncoderTaskRunner->PostTask(
                 FROM_HERE, ::base::BindOnce(
-                                   [](::base::WeakPtrFactory<V4L2EncodeComponent>* weakPtrFactory) {
+                                   [](::base::WeakPtrFactory<V4L2EncodeComponent>* weakPtrFactory,
+                                      std::unique_ptr<VideoEncoder>* encoder) {
                                        weakPtrFactory->InvalidateWeakPtrs();
+                                       encoder->reset();
                                    },
-                                   &mWeakThisFactory));
+                                   &mWeakThisFactory, &mEncoder));
         mEncoderThread.Stop();
     }
 
@@ -1035,7 +1037,7 @@ C2Work* V4L2EncodeComponent::getWorkByTimestamp(int64_t timestamp) {
     // items that are marked as EOS, as their timestamp might clash with other work items.
     auto it = std::find_if(
             mWorkQueue.begin(), mWorkQueue.end(), [timestamp](const std::unique_ptr<C2Work>& w) {
-                return !(w->input.flags & C2FrameData::FLAG_END_OF_STREAM) &&
+                return !(w->input.flags & C2FrameData::FLAG_END_OF_STREAM && w->input.buffers.empty()) &&
                        w->input.ordinal.timestamp.peeku() == static_cast<uint64_t>(timestamp);
             });
     if (it == mWorkQueue.end()) {

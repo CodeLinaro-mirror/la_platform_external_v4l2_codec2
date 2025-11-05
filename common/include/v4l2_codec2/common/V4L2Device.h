@@ -132,6 +132,8 @@ private:
 // before the V4L2Queue buffers are freed.
 class V4L2ReadableBuffer : public base::RefCountedThreadSafe<V4L2ReadableBuffer> {
 public:
+    //Returns the memory type of the buffer. Useful to check if memcpy is needed for MMAP bufs.
+    enum v4l2_memory memory() const;
     // Returns whether the V4L2_BUF_FLAG_LAST flag is set for this buffer.
     bool isLast() const;
     // Returns whether the V4L2_BUF_FLAG_KEYFRAME flag is set for this buffer.
@@ -203,7 +205,8 @@ public:
     // adjusted by the driver, so the caller must check their values.
     std::optional<struct v4l2_format> setFormat(uint32_t fourcc, const ui::Size& size,
                                                 size_t bufferSize,
-                                                uint32_t stride = 0) WARN_UNUSED_RESULT;
+                                                uint32_t stride = 0,
+                                                const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects = {}) WARN_UNUSED_RESULT;
 
     // Identical to |setFormat|, but does not actually apply the format, and can be called anytime.
     // Returns an adjusted V4L2 format if |fourcc| is supported by the queue, or |nullopt| if

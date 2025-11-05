@@ -33,6 +33,7 @@ public:
     static std::unique_ptr<VideoDecoder> Create(
             const VideoCodec& codec, const size_t inputBufferSize, const size_t minNumOutputBuffers, 
             const HalPixelFormat outputPixelFormat,
+            const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects,
             GetPoolCB getPoolCB, OutputCB outputCb, ErrorCB errorCb,
             scoped_refptr<::base::SequencedTaskRunner> taskRunner);
     ~V4L2Decoder() override;
@@ -63,8 +64,10 @@ private:
     V4L2Decoder(scoped_refptr<::base::SequencedTaskRunner> taskRunner);
     bool start(const VideoCodec& codec, const size_t inputBufferSize,
                const size_t minNumOutputBuffers, const HalPixelFormat outputPixelFormat,
+               const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects,
                GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb);
-    bool setupInputFormat(const uint32_t inputPixelFormat, const size_t inputBufferSize);
+    bool setupInputFormat(const uint32_t inputPixelFormat, const size_t inputBufferSize,
+                          const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects);
 
     // Sets minimal resolution and allocates minimal amount of output buffers for
     // drain done signaling.

@@ -272,7 +272,7 @@ C2ConstGraphicBlock FormatConverter::convertBlock(uint64_t frameIndex,
             *status = C2_CORRUPTED;
             return inputBlock;  // This is actually redundant and should not be used.
         }
-    } else if (inputLayout.type == C2PlanarLayout::TYPE_RGBA) {
+    } else if ((inputLayout.type == C2PlanarLayout::TYPE_RGBA) || (inputLayout.type == C2PlanarLayout::TYPE_RGB)) {
         // There is only RGBA_8888 specified in C2AllocationGralloc::map(), no BGRA_8888. Maybe
         // BGRA_8888 is not used now?
         inputFormat = VideoPixelFormat::ABGR;

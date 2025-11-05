@@ -124,11 +124,12 @@ bool waitForDRC(const C2ConstLinearBlock& input, std::optional<VideoCodec> codec
 std::unique_ptr<VideoDecoder> V4L2Decoder::Create(
         const VideoCodec& codec, const size_t inputBufferSize, const size_t minNumOutputBuffers,
         const HalPixelFormat outputPixelFormat,
+        const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects,
         GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb,
         scoped_refptr<::base::SequencedTaskRunner> taskRunner) {
     std::unique_ptr<V4L2Decoder> decoder =
             ::base::WrapUnique<V4L2Decoder>(new V4L2Decoder(taskRunner));
-    if (!decoder->start(codec, inputBufferSize, minNumOutputBuffers, outputPixelFormat,
+    if (!decoder->start(codec, inputBufferSize, minNumOutputBuffers, outputPixelFormat, colorAspects,
                         std::move(getPoolCb), std::move(outputCb), std::move(errorCb))) {
         return nullptr;
     }
@@ -170,8 +171,8 @@ V4L2Decoder::~V4L2Decoder() {
 
 bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
                         const size_t minNumOutputBuffers, const HalPixelFormat outputPixelFormat,
-                        GetPoolCB getPoolCb, OutputCB outputCb,
-                        ErrorCB errorCb) {
+                        const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects,
+                        GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb) {
     ALOGV("%s(codec=%s, inputBufferSize=%zu, minNumOutputBuffers=%zu)", __func__,
           VideoCodecToString(codec), inputBufferSize, minNumOutputBuffers);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
@@ -225,7 +226,7 @@ bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
         ALOGE("Failed to create V4L2 queue.");
         return false;
     }
-    if (!setupInputFormat(inputPixelFormat, inputBufferSize)) {
+    if (!setupInputFormat(inputPixelFormat, inputBufferSize, colorAspects)) {
         ALOGE("Failed to setup input format.");
         return false;
     }
@@ -245,7 +246,8 @@ bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
     return true;
 }
 
-bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t inputBufferSize) {
+bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t inputBufferSize,
+                                   const std::unique_ptr<C2StreamColorAspectsInfo::output>& colorAspects) {
     ALOGV("%s(inputPixelFormat=%u, inputBufferSize=%zu)", __func__, inputPixelFormat,
           inputBufferSize);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
@@ -260,7 +262,7 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
 
     // Setup the input format.
     // Allocate of initial buffers with minimum supported dimension, to avoid the issue with buffer allocation by the kernel due to size constraints.
-    auto format = mInputQueue->setFormat(inputPixelFormat, ui::Size(kMinimumSupportedWidth, kMinimumSupportedHeight), inputBufferSize, 0);
+    auto format = mInputQueue->setFormat(inputPixelFormat, ui::Size(kMinimumSupportedWidth, kMinimumSupportedHeight), inputBufferSize, 0, colorAspects);
     if (!format) {
         ALOGE("Failed to call IOCTL to set input format.");
         return false;
@@ -268,7 +270,7 @@ bool V4L2Decoder::setupInputFormat(const uint32_t inputPixelFormat, const size_t
     ALOG_ASSERT(format->fmt.pix_mp.pixelformat == inputPixelFormat);
 
     v4l2_memory memtype;
-    if (property_get_bool("ro.vendor.v4l2_codec2.use_dmabuf_inputqueue", false)) {
+    if (property_get_bool("ro.vendor.v4l2_codec2.decoder.use_dmabuf_inputqueue", true)) {
         memtype = V4L2_MEMORY_DMABUF;
     } else {
         memtype = V4L2_MEMORY_MMAP;
@@ -295,7 +297,7 @@ bool V4L2Decoder::setupInitialOutput() {
     }
 
     v4l2_memory memtype;
-    if (property_get_bool("ro.vendor.v4l2_codec2.use_dmabuf_outputqueue", false)) {
+    if (property_get_bool("ro.vendor.v4l2_codec2.decoder.use_dmabuf_outputqueue", true)) {
         memtype = V4L2_MEMORY_DMABUF;
     } else {
         memtype = V4L2_MEMORY_MMAP;
@@ -314,7 +316,7 @@ bool V4L2Decoder::setupInitialOutput() {
 
     mInitialEosBuffer =
             new GraphicBuffer(mCodedSize.getWidth(), mCodedSize.getHeight(),
-                              static_cast<PixelFormat>(HalPixelFormat::YCBCR_420_888),
+                              static_cast<PixelFormat>(mOutputPixelFormat),
                               GraphicBuffer::USAGE_HW_VIDEO_ENCODER, "V4L2DecodeComponent");
 
     if (mInitialEosBuffer->initCheck() != NO_ERROR) {
@@ -423,7 +425,7 @@ bool V4L2Decoder::startOutputQueue(size_t minOutputBuffersCount, enum v4l2_memor
 }
 
 void V4L2Decoder::decode(std::unique_ptr<ConstBitstreamBuffer> buffer, DecodeCB decodeCb) {
-    ALOGV("%s(id=%d)", __func__, buffer->id);
+    ALOGV("%s(id=%ld)", __func__, buffer->id);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
     if (mState == State::Error) {
@@ -526,8 +528,8 @@ void V4L2Decoder::pumpDecodeRequest() {
         auto request = std::move(mDecodeRequests.front());
         mDecodeRequests.pop();
 
-        const int32_t bitstreamId = request.buffer->id;
-        ALOGV("QBUF to input queue, bitstreadId=%d", bitstreamId);
+        const int64_t bitstreamId = request.buffer->id;
+        ALOGV("QBUF to input queue, bitstreadId=%ld", bitstreamId);
         inputBuffer->setTimeStamp(
             {.tv_sec = static_cast<time_t>(bitstreamId / ::base::Time::kMicrosecondsPerSecond),
              .tv_usec = static_cast<time_t>(bitstreamId % ::base::Time::kMicrosecondsPerSecond)});
@@ -557,7 +559,7 @@ void V4L2Decoder::pumpDecodeRequest() {
         }
 
         if (!result) {
-            ALOGE("%s(): Failed to QBUF to input queue, bitstreamId=%d", __func__, bitstreamId);
+            ALOGE("%s(): Failed to QBUF to input queue, bitstreamId=%ld", __func__, bitstreamId);
             onError();
             return;
         }
@@ -570,10 +572,6 @@ void V4L2Decoder::flush() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
-    if (mState == State::Idle) {
-        ALOGV("Nothing need to flush, ignore.");
-        return;
-    }
     if (mState == State::Error) {
         ALOGE("Ignore due to error state.");
         return;
@@ -647,10 +645,10 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         inputDequeued = true;
 
         // Run the corresponding decode callback.
-        int32_t id = static_cast<int32_t>(
+        int64_t id = static_cast<int64_t>(
                 dequeuedBuffer->getTimeStamp().tv_usec +
                 dequeuedBuffer->getTimeStamp().tv_sec * ::base::Time::kMicrosecondsPerSecond);
-        ALOGV("DQBUF from input queue, bitstreamId=%d", id);
+        ALOGV("DQBUF from input queue, bitstreamId=%ld", id);
         auto it = mPendingDecodeCbs.find(id);
         if (it == mPendingDecodeCbs.end()) {
             ALOGW("Callback is already abandoned.");
@@ -661,7 +659,7 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
     }
 
     bool outputDequeued = false;
-    while (mOutputQueue->queuedBuffersCount() > 0) {
+    while ((mOutputQueue->queuedBuffersCount() > 0) && mVideoFramePool) {
         bool success;
         V4L2ReadableBufferRef dequeuedBuffer;
         std::tie(success, dequeuedBuffer) = mOutputQueue->dequeueBuffer();
@@ -675,12 +673,12 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         outputDequeued = true;
 
         const size_t bufferId = dequeuedBuffer->bufferId();
-        const int32_t bitstreamId = static_cast<int32_t>(
+        const int64_t bitstreamId = static_cast<int64_t>(
                 dequeuedBuffer->getTimeStamp().tv_usec +
                 dequeuedBuffer->getTimeStamp().tv_sec * ::base::Time::kMicrosecondsPerSecond);
         const size_t bytesUsed = dequeuedBuffer->getPlaneBytesUsed(0);
         const bool isLast = dequeuedBuffer->isLast();
-        ALOGV("DQBUF from output queue, bufferId=%zu, bitstreamId=%d, bytesused=%zu, isLast=%d",
+        ALOGV("DQBUF from output queue, bufferId=%zu, bitstreamId=%ld, bytesused=%zu, isLast=%d",
               bufferId, bitstreamId, bytesUsed, isLast);
 
         // Get the corresponding VideoFrame of the dequeued buffer.
@@ -691,7 +689,7 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         mFrameAtDevice.erase(it);
 
         if (bytesUsed > 0) {
-            ALOGV("Send output frame(bitstreamId=%d) to client", bitstreamId);
+            ALOGV("Send output frame(bitstreamId=%ld) to client", bitstreamId);
             frame->setBitstreamId(bitstreamId);
             frame->setVisibleRect(mVisibleRect);
             mOutputCb.Run(std::move(frame));
@@ -703,11 +701,19 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
             auto outputBuffer = mOutputQueue->getFreeBuffer(bufferId);
             ALOG_ASSERT(outputBuffer, "V4L2 output queue slot %zu is not freed.", bufferId);
 
-            if (!std::move(*outputBuffer).queueDMABuf(frame->getFDs())) {
+            bool result;
+            if (outputBuffer->memory() == V4L2_MEMORY_MMAP) {
+                result = std::move(*outputBuffer).queueMMap();
+            } else {
+                result = std::move(*outputBuffer).queueDMABuf(frame->getFDs());
+            }
+
+            if (!result) {
                 ALOGE("%s(): Failed to recycle empty buffer to output queue.", __func__);
                 onError();
                 return;
             }
+
             mFrameAtDevice.insert(std::make_pair(bufferId, std::move(frame)));
         }
 
@@ -762,7 +768,14 @@ bool V4L2Decoder::changeResolution() {
         mInitialEosBuffer = nullptr;
     }
 
-    if (!startOutputQueue(mMinNumOutputBuffers, V4L2_MEMORY_DMABUF)) {
+    v4l2_memory memtype;
+    if (property_get_bool("ro.vendor.v4l2_codec2.decoder.use_dmabuf_outputqueue", true)) {
+        memtype = V4L2_MEMORY_DMABUF;
+    } else {
+        memtype = V4L2_MEMORY_MMAP;
+    }
+
+    if (!startOutputQueue(mMinNumOutputBuffers, memtype)) {
         ALOGE("Failed to start output queue during DRC.");
         return false;
     }
@@ -907,12 +920,20 @@ void V4L2Decoder::onVideoFrameReady(
     uint32_t v4l2Id = outputBuffer->bufferId();
     ALOGV("QBUF to output queue, blockId=%u, V4L2Id=%u", blockId, v4l2Id);
 
-    if (!std::move(*outputBuffer).queueDMABuf(frame->getFDs())) {
+    bool result;
+    if (outputBuffer->memory() == V4L2_MEMORY_MMAP) {
+        result = std::move(*outputBuffer).queueMMap();
+    } else {
+        result = std::move(*outputBuffer).queueDMABuf(frame->getFDs());
+    }
+
+    if (!result) {
         ALOGE("%s(): Failed to QBUF to output queue, blockId=%u, V4L2Id=%u", __func__, blockId,
               v4l2Id);
         onError();
         return;
     }
+
     if (mFrameAtDevice.find(v4l2Id) != mFrameAtDevice.end()) {
         ALOGE("%s(): V4L2 buffer %d already enqueued.", __func__, v4l2Id);
         onError();

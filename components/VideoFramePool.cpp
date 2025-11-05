@@ -47,12 +47,12 @@ std::optional<uint32_t> VideoFramePool::getBufferIdFromGraphicBlock(C2BlockPool&
         }
         return dmabufId.value();
     }
-    case V4L2AllocatorId::V4L2_BUFFERPOOL:
+    case C2PlatformAllocatorStore::GRALLOC:
         FALLTHROUGH;
     case V4L2AllocatorId::SECURE_LINEAR: {
         std::shared_ptr<_C2BlockPoolData> blockPoolData =
                 _C2BlockFactory::GetGraphicBlockPoolData(block);
-        if (blockPoolData->getType() != _C2BlockPoolData::TYPE_BUFFERPOOL) {
+        if (!blockPoolData || blockPoolData->getType() != _C2BlockPoolData::TYPE_BUFFERPOOL) {
             ALOGE("Obtained C2GraphicBlock is not bufferpool-backed.");
             return std::nullopt;
         }
@@ -70,19 +70,6 @@ std::optional<uint32_t> VideoFramePool::getBufferIdFromGraphicBlock(C2BlockPool&
 }
 
 // static
-c2_status_t VideoFramePool::requestNewBufferSet(C2BlockPool& blockPool, int32_t bufferCount,
-                                                const ui::Size& size, uint32_t format,
-                                                C2MemoryUsage usage) {
-    ALOGE("%s(): unknown allocator ID: %u", __func__, blockPool.getAllocatorId());
-    return C2_BAD_VALUE;
-}
-
-// static
-bool VideoFramePool::setNotifyBlockAvailableCb(C2BlockPool& blockPool, ::base::OnceClosure cb) {
-    return false;
-}
-
-// static
 std::unique_ptr<VideoFramePool> VideoFramePool::Create(
         std::shared_ptr<C2BlockPool> blockPool, const size_t numBuffers, const ui::Size& size,
         HalPixelFormat pixelFormat, bool isSecure,
@@ -92,16 +79,11 @@ std::unique_ptr<VideoFramePool> VideoFramePool::Create(
     uint64_t usage = static_cast<uint64_t>(BufferUsage::VIDEO_DECODER);
     if (isSecure) {
         usage |= C2MemoryUsage::READ_PROTECTED;
-    } else if (blockPool->getAllocatorId() == android::V4L2AllocatorId::V4L2_BUFFERPOOL) {
+    } else if (blockPool->getAllocatorId() == C2PlatformAllocatorStore::GRALLOC) {
         // CPU access to buffers is only required in byte buffer mode.
         usage |= C2MemoryUsage::CPU_READ;
     }
     const C2MemoryUsage memoryUsage(usage);
-
-    if (requestNewBufferSet(*blockPool, numBuffers, size, static_cast<uint32_t>(pixelFormat),
-                            memoryUsage) != C2_OK) {
-        return nullptr;
-    }
 
     std::unique_ptr<VideoFramePool> pool =
             ::base::WrapUnique(new VideoFramePool(std::move(blockPool), numBuffers, size,
@@ -135,6 +117,8 @@ bool VideoFramePool::initialize() {
 
     mClientWeakThis = mClientWeakThisFactory.GetWeakPtr();
     mFetchWeakThis = mFetchWeakThisFactory.GetWeakPtr();
+
+    mBufferIdCount = 0;
 
     return true;
 }
@@ -212,7 +196,18 @@ void VideoFramePool::getVideoFrameTask() {
     c2_status_t err = mBlockPool->fetchGraphicBlock(mSize.width, mSize.height,
                                                     static_cast<uint32_t>(mPixelFormat),
                                                     mMemoryUsage, &block, &fence);
-    if (err == C2_BLOCKING) {
+    // C2_BLOCKING can be returned either based on the state of the block pool itself
+    // or the state of the underlying buffer queue. If the cause is the underlying
+    // buffer queue, then the block pool returns a null fence. Since a null fence is
+    // immediately ready, we need to delay instead of trying to wait on the fence, to
+    // avoid spinning.
+    //
+    // Unfortunately, a null fence is considered a valid fence, so the best we can do
+    // to detect a null fence is to assume that any fence that is immediately ready
+    // is the null fence. A false positive by racing with a real fence can result in
+    // an unnecessary delay, but the only alternative is to ignore fences altogether
+    // and always delay.
+    if (err == C2_BLOCKING && !fence.ready()) {
         err = fence.wait(kFenceWaitTimeoutNs);
         if (err == C2_OK) {
             ALOGV("%s(): fence wait succeded, retrying now", __func__);
@@ -231,7 +226,12 @@ void VideoFramePool::getVideoFrameTask() {
 
     std::optional<uint32_t> bufferId;
     if (err == C2_OK) {
-        bufferId = getBufferIdFromGraphicBlock(*mBlockPool, *block);
+        if (mBlockPool->getLocalId() < C2BlockPool::PLATFORM_START) {
+            bufferId.emplace(mBufferIdCount);
+            mBufferIdCount = (mBufferIdCount + 1) % mMaxBufferCount;
+        } else {
+            bufferId = getBufferIdFromGraphicBlock(*mBlockPool, *block);
+        }
 
         if (bufferId) {
             ALOGV("%s(): Got buffer with id = %u", __func__, *bufferId);
