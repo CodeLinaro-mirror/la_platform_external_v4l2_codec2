@@ -199,7 +199,7 @@ HEVCNalParser::HEVCNalParser(const uint8_t* data, size_t length) : NalParser(dat
 bool HEVCNalParser::locateSPS() {
     while (locateNextNal()) {
         if (length() == 0) continue;
-        if (type() != kSPSType) continue;
+        if (type() != NalUnitType::HEVC_NAL_SPS) continue;
         return true;
     }
 
@@ -209,7 +209,7 @@ bool HEVCNalParser::locateSPS() {
 bool HEVCNalParser::locatePPS() {
     while (locateNextNal()) {
         if (length() == 0) continue;
-        if (type() != kPPSType) continue;
+        if (type() != NalUnitType::HEVC_NAL_PPS) continue;
         return true;
     }
 
@@ -219,7 +219,7 @@ bool HEVCNalParser::locatePPS() {
 bool HEVCNalParser::locateIDR() {
     while (locateNextNal()) {
         if (length() == 0) continue;
-        if (type() != kIDRWType && type() != kIDRNType && type() != kCRAType) continue;
+        if (type() >= NalUnitType::HEVC_NAL_SLICE_IDR_W_RADL && type() <= NalUnitType::HEVC_NAL_SLICE_CRA_NUT) continue;
         return true;
     }
 
