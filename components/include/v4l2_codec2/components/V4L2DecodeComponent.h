@@ -98,7 +98,9 @@ private:
                                                      const bool isEmptyWork);
     
     // Process work buffer by creating bitstream buffer from it and send for decoding if needed.
-    void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock, const uint8_t flags);
+    void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock,
+                                                      const size_t offset,
+                                                      const uint8_t flags);
 
     // Get the buffer pool.
     std::unique_ptr<VideoFramePool> getVideoFramePool(const ui::Size& size,
@@ -174,6 +176,9 @@ private:
     bool mPendingColorAspectsChange = false;
     // The record of frame index to update color aspects. Details as above.
     uint64_t mPendingColorAspectsChangeFrameIndex;
+
+    // Set to true when low-latency mode is required.
+    bool mLowLatencyMode = false;
 
     // The device task runner and its sequence checker. We should interact with
     // |mDevice| on this.
