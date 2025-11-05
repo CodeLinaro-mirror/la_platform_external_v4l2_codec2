@@ -130,6 +130,9 @@ V4L2Decoder::~V4L2Decoder() {
         mDevice->stopPolling();
         mDevice = nullptr;
     }
+    if (mInitialEosBuffer) {
+        mInitialEosBuffer = nullptr;
+    }
 }
 
 bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
@@ -197,7 +200,8 @@ bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
         return false;
     }
 
-    if (!mDevice->startPolling(::base::BindRepeating(&V4L2Decoder::serviceDeviceTask, mWeakThis),
+    if (!mDevice->startPolling(mTaskRunner,
+                               ::base::BindRepeating(&V4L2Decoder::serviceDeviceTask, mWeakThis),
                                ::base::BindRepeating(&V4L2Decoder::onError, mWeakThis))) {
         ALOGE("Failed to start polling V4L2 device.");
         return false;
@@ -274,7 +278,28 @@ bool V4L2Decoder::setupInitialOutput() {
         return false;
     }
 
-    if (!std::move(*eosBuffer).queueMMap()) {
+    mInitialEosBuffer =
+            new GraphicBuffer(mCodedSize.getWidth(), mCodedSize.getHeight(),
+                              static_cast<PixelFormat>(HalPixelFormat::YCBCR_420_888),
+                              GraphicBuffer::USAGE_HW_VIDEO_ENCODER, "V4L2DecodeComponent");
+
+    if (mInitialEosBuffer->initCheck() != NO_ERROR) {
+        return false;
+    }
+
+    std::vector<int> fds;
+    for (size_t i = 0; i < mInitialEosBuffer->handle->numFds; i++) {
+        fds.push_back(mInitialEosBuffer->handle->data[i]);
+    }
+
+    bool result;
+    if (eosBuffer->memory() == V4L2_MEMORY_MMAP) {
+        result = std::move(*eosBuffer).queueMMap();
+    } else {
+        result = std::move(*eosBuffer).queueDMABuf(fds);
+    }
+   
+    if (!result) {
         ALOGE("Failed to queue initial EOS buffer");
         return false;
     }
@@ -430,6 +455,18 @@ void V4L2Decoder::pumpDecodeRequest() {
             auto request = std::move(mDecodeRequests.front());
             mDecodeRequests.pop();
 
+            // There is one more case that EOS frame cannot be dequeued because
+            // the first resolution change event wasn't dequeued before - output
+            // queues on the host are not streaming but ARCVM has no knowledge about
+            // it. Check if first resolution change event was received and finish
+            // drain now if it wasn't.
+            if (mInitialEosBuffer) {
+                ALOGV("Terminate drain, because there was no stream");
+                mTaskRunner->PostTask(FROM_HERE, ::base::BindOnce(std::move(request.decodeCb),
+                                                                  VideoDecoder::DecodeStatus::kOk));
+                return;
+            }
+
             if (!sendV4L2DecoderCmd(false)) {
                 std::move(request.decodeCb).Run(VideoDecoder::DecodeStatus::kError);
                 onError();
@@ -532,7 +569,8 @@ void V4L2Decoder::flush() {
         tryFetchVideoFrame();
     }
 
-    if (!mDevice->startPolling(::base::BindRepeating(&V4L2Decoder::serviceDeviceTask, mWeakThis),
+    if (!mDevice->startPolling(mTaskRunner,
+                               ::base::BindRepeating(&V4L2Decoder::serviceDeviceTask, mWeakThis),
                                ::base::BindRepeating(&V4L2Decoder::onError, mWeakThis))) {
         ALOGE("Failed to start polling V4L2 device.");
         onError();
@@ -681,6 +719,10 @@ bool V4L2Decoder::changeResolution() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
+    if (mInitialEosBuffer) {
+        mInitialEosBuffer = nullptr;
+    }
+
     if (!startOutputQueue(mMinNumOutputBuffers, V4L2_MEMORY_DMABUF)) {
         ALOGE("Failed to start output queue during DRC.");
         return false;
@@ -794,6 +836,17 @@ void V4L2Decoder::onVideoFrameReady(
     if (iter != mBlockIdToV4L2Id.end()) {
         // If we have met this block in the past, reuse the same V4L2 buffer.
         outputBuffer = mOutputQueue->getFreeBuffer(iter->second);
+        if (!outputBuffer) {
+            // NOTE(b/281477122): There is a bug in C2BufferQueueBlock. Its buffer queue slots
+            // cache is inconsistent when MediaSync is used and a buffer with the same dmabuf id
+            // can be returned twice despite being already in use by V4L2Decoder. We drop the
+            // buffer here in order to prevent unwanted errors. It is safe, bacause its allocation
+            // will be kept alive by the C2GraphicBlock instance.
+            ALOGW("%s(): The frame have been supplied again, despite being already enqueued",
+                  __func__);
+            tryFetchVideoFrame();
+            return;
+        }
     } else if (mBlockIdToV4L2Id.size() < mOutputQueue->allocatedBuffersCount()) {
         // If this is the first time we see this block, give it the next
         // available V4L2 buffer.

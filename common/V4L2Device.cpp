@@ -1157,7 +1157,7 @@ int V4L2Device::ioctl(int request, void* arg) {
     return HANDLE_EINTR(::ioctl(mDeviceFd.get(), request, arg));
 }
 
-bool V4L2Device::poll(bool pollDevice, bool* eventPending) {
+bool V4L2Device::poll(bool pollDevice, bool pollBuffers, bool* eventPending, bool* buffersPending) {
     struct pollfd pollfds[2];
     nfds_t nfds;
     int pollfd = -1;
@@ -1169,7 +1169,11 @@ bool V4L2Device::poll(bool pollDevice, bool* eventPending) {
     if (pollDevice) {
         ALOGV("adding device fd to poll() set");
         pollfds[nfds].fd = mDeviceFd.get();
-        pollfds[nfds].events = POLLIN | POLLOUT | POLLERR | POLLPRI;
+        pollfds[nfds].events = POLLERR | POLLPRI;
+        if (pollBuffers) {
+            ALOGV("will poll buffers");
+            pollfds[nfds].events |= POLLIN | POLLOUT;
+        }
         pollfd = nfds;
         nfds++;
     }
@@ -1179,6 +1183,7 @@ bool V4L2Device::poll(bool pollDevice, bool* eventPending) {
         return false;
     }
     *eventPending = (pollfd != -1 && pollfds[pollfd].revents & POLLPRI);
+    *buffersPending = (pollfd != -1 && pollfds[pollfd].revents & (POLLIN | POLLOUT));
     return true;
 }
 
@@ -1931,12 +1936,14 @@ V4L2Device::SupportedEncodeProfiles V4L2Device::enumerateSupportedEncodeProfiles
     return profiles;
 }
 
-bool V4L2Device::startPolling(android::V4L2DevicePoller::EventCallback eventCallback,
+bool V4L2Device::startPolling(scoped_refptr<base::SequencedTaskRunner> taskRunner,
+                              android::V4L2DevicePoller::EventCallback eventCallback,
                               base::RepeatingClosure errorCallback) {
     DCHECK_CALLED_ON_VALID_SEQUENCE(mClientSequenceChecker);
 
     if (!mDevicePoller) {
-        mDevicePoller = std::make_unique<android::V4L2DevicePoller>(this, "V4L2DeviceThreadPoller");
+        mDevicePoller = std::make_unique<android::V4L2DevicePoller>(this, "V4L2DeviceThreadPoller",
+                                                                    std::move(taskRunner));
     }
 
     bool ret = mDevicePoller->startPolling(std::move(eventCallback), std::move(errorCallback));

@@ -36,7 +36,8 @@ public:
 
     // Create a poller for |device|, using a thread named |threadName|. Notification won't start
     // until |startPolling()| is called.
-    V4L2DevicePoller(V4L2Device* const device, const std::string& threadName);
+    V4L2DevicePoller(V4L2Device* const device, const std::string& threadName,
+                     scoped_refptr<base::SequencedTaskRunner> taskRunner);
     ~V4L2DevicePoller();
 
     // Starts polling. |mEventCallback| will be posted on the caller's sequence every time an event
@@ -74,13 +75,10 @@ private:
     // Client sequence's task runner, where closures are posted.
     scoped_refptr<base::SequencedTaskRunner> mClientTaskTunner;
 
-    // Since poll() returns immediately if no buffers have been queued, we cannot rely on it to
-    // pause the polling thread until an event occurs. Instead,
-    // the polling thread will wait on this WaitableEvent (signaled by |schedulePoll| before calling
-    // poll(), so we only call it when we are actually waiting for an event.
-    base::WaitableEvent mTriggerPoll;
     // Set to true when we wish to stop polling, instructing the poller thread to break its loop.
     std::atomic_bool mStopPolling;
+    // Set to true when we wish poll to await for QBUF/DQBUF readiness
+    std::atomic_bool mPollBuffers;
 };
 
 }  // namespace android

@@ -17,6 +17,7 @@
 #include <base/callback.h>
 #include <base/memory/weak_ptr.h>
 
+#include <ui/GraphicBuffer.h>
 #include <ui/Rect.h>
 #include <ui/Size.h>
 #include <v4l2_codec2/common/V4L2Device.h>
@@ -96,6 +97,9 @@ private:
     scoped_refptr<V4L2Device> mDevice;
     scoped_refptr<V4L2Queue> mInputQueue;
     scoped_refptr<V4L2Queue> mOutputQueue;
+
+    // Contains the initial EOS buffer, until DRC event is dequeued.
+    sp<GraphicBuffer> mInitialEosBuffer;
 
     std::queue<DecodeRequest> mDecodeRequests;
     std::map<int32_t, DecodeCB> mPendingDecodeCbs;
