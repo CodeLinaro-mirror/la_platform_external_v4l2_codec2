@@ -80,9 +80,20 @@ protected:
     // If new settings found trigger color aspects change. 
     void checkCodedColorAspects(const C2Work* work);
 
-    void processCSDWork(const int64_t bitstreamId, const C2Work* work);
-    void processWork(const int64_t bitstreamId, const C2Work* work);
-    void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock);
+    // Get last input work of current AU and trigger send action with it.
+    void sendLastAccessUnit();
+
+    // Report Access Unit works as dropped frame.
+    void reportAccessUnitWorks();
+
+    // Process input work and check it content to trigger proper decoding action. 
+    void processInputWork(const int64_t bitstreamId, const C2Work* work, 
+                                                     const bool isCSDWork, 
+                                                     const bool isEOSWork, 
+                                                     const bool isEmptyWork);
+    
+    // Process work buffer by creating bitstream buffer from it and send for decoding if needed.
+    void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock, const uint8_t flags);
 
     // Get the buffer pool.
     std::unique_ptr<VideoFramePool> getVideoFramePool(const ui::Size& size,
@@ -123,6 +134,11 @@ protected:
 
     // The common NALs parser.
     std::unique_ptr<NalParser> mNalParser;
+    
+    // Flag that tells if input is AU-align.  
+    bool mInputAUAlign = true;
+    // Stores input buffers bitstream IDs if they are not AU-align.
+    std::deque<int64_t> mInputBitstreamIds;
 
     // The works whose input buffers are sent to |mDecoder|. The key is the
     // bitstream ID of work's input buffer.
