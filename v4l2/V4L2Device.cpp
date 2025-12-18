@@ -2109,7 +2109,8 @@ std::optional<VideoFrameLayout> V4L2Device::v4L2FormatToVideoFrameLayout(
         }
     }
 
-    return VideoFrameLayout{videoFormat, ui::Size(pixMp.width, pixMp.height), std::move(planes),
+    // Calculate the coded size from the format which included necessary alignments.
+    return VideoFrameLayout{videoFormat, allocatedSizeFromV4L2Format(format), std::move(planes),
                             (numBuffers > 1)};
 }
 
