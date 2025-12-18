@@ -155,6 +155,8 @@ private:
 // before the V4L2Queue buffers are freed.
 class V4L2ReadableBuffer : public ::base::RefCountedThreadSafe<V4L2ReadableBuffer> {
 public:
+    //Returns the memory type of the buffer. Useful to check if memcpy is needed for MMAP bufs.
+    enum v4l2_memory memory() const;
     // Returns whether the V4L2_BUF_FLAG_LAST flag is set for this buffer.
     bool isLast() const;
     // Returns whether the V4L2_BUF_FLAG_KEYFRAME flag is set for this buffer.
