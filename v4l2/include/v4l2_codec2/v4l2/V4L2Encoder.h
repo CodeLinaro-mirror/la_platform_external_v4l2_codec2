@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_V4L2_V4L2_ENCODER_H
 #define ANDROID_V4L2_CODEC2_V4L2_V4L2_ENCODER_H
 
@@ -31,6 +35,7 @@ public:
             C2Config::profile_t profile, std::optional<uint8_t> level, const ui::Size& visibleSize,
             uint32_t stride, uint32_t keyFramePeriod, C2Config::bitrate_mode_t bitrateMode,
             uint32_t bitrate, std::optional<uint32_t> peakBitrate,
+            const std::shared_ptr<C2StreamColorAspectsInfo::input>& colorAspects,
             FetchOutputBufferCB fetchOutputBufferCb, InputBufferDoneCB inputBufferDoneCb,
             OutputBufferDoneCB outputBufferDoneCb, DrainDoneCB drainDoneCb, ErrorCB errorCb,
             scoped_refptr<::base::SequencedTaskRunner> taskRunner);
@@ -80,7 +85,8 @@ private:
     bool initialize(C2Config::profile_t outputProfile, std::optional<uint8_t> level,
                     const ui::Size& visibleSize, uint32_t stride, uint32_t keyFramePeriod,
                     C2Config::bitrate_mode_t bitrateMode, uint32_t bitrate,
-                    std::optional<uint32_t> peakBitrate);
+                    std::optional<uint32_t> peakBitrate,
+                    const std::shared_ptr<C2StreamColorAspectsInfo::input>& colorAspects);
 
     // Handle the next encode request on the queue.
     void handleEncodeRequest();
@@ -92,7 +98,8 @@ private:
     void onDrainDone(bool done);
 
     // Configure input format on the V4L2 device.
-    bool configureInputFormat(VideoPixelFormat inputFormat, uint32_t stride);
+    bool configureInputFormat(VideoPixelFormat inputFormat, uint32_t stride,
+        const std::shared_ptr<C2StreamColorAspectsInfo::input>& colorAspects);
     // Configure output format on the V4L2 device.
     bool configureOutputFormat(C2Config::profile_t outputProfile);
     // Configure required and optional controls on the V4L2 device.
