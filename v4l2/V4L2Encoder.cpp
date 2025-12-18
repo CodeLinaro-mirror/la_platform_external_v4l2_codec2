@@ -856,10 +856,22 @@ bool V4L2Encoder::enqueueOutputBuffer() {
 
     size_t bufferId = buffer->bufferId();
 
-    std::vector<int> fds;
-    fds.push_back(bitstreamBuffer->dmabuf->handle()->data[0]);
-    if (!std::move(*buffer).queueDMABuf(fds)) {
-        ALOGE("Failed to queue output buffer using QueueDMABuf");
+    bool result;
+    std::string queueMemType;
+
+    if (buffer->memory() == V4L2_MEMORY_MMAP) {
+        result = std::move(*buffer).queueMMap();
+        queueMemType = "QueueMMap";
+    } else {
+        std::vector<int> fds;
+        fds.push_back(bitstreamBuffer->dmabuf->handle()->data[0]);
+
+        result = std::move(*buffer).queueDMABuf(fds);
+        queueMemType = "QueueDMABuf";
+    }
+
+    if (!result) {
+        ALOGE("Failed to queue output buffer using %s", queueMemType.c_str());
         onError();
         return false;
     }
@@ -954,6 +966,14 @@ bool V4L2Encoder::dequeueOutputBuffer() {
 
     std::unique_ptr<BitstreamBuffer> bitstreamBuffer =
             std::move(mOutputBuffers[buffer->bufferId()]);
+
+    if (buffer->memory() == V4L2_MEMORY_MMAP) {
+        C2WriteView writeView = bitstreamBuffer->dmabuf->map().get();
+        size_t write_offset =  buffer->getPlaneDataOffset(0);
+        ALOG_ASSERT(writeView.size() - write_offset >= encodedDataSize);
+        memcpy(writeView.data() + write_offset, buffer->getPlaneMapping(0), encodedDataSize);
+    }
+
     if (encodedDataSize > 0) {
         if (!mInjectParamsBeforeIDR) {
             // No need to inject SPS or PPS before IDR frames, we can just return the buffer as-is.
@@ -1052,7 +1072,14 @@ bool V4L2Encoder::createOutputBuffers() {
 
     // No memory is allocated here, we just generate a list of buffers on the output queue, which
     // will hold memory handles to the real buffers.
-    if (mOutputQueue->allocateBuffers(kOutputBufferCount, V4L2_MEMORY_DMABUF) <
+    v4l2_memory memtype;
+    if (property_get_bool("ro.vendor.v4l2_codec2.encoder.use_dmabuf_outputqueue", true)) {
+        memtype = V4L2_MEMORY_DMABUF;
+    } else {
+        memtype = V4L2_MEMORY_MMAP;
+    }
+
+    if (mOutputQueue->allocateBuffers(kOutputBufferCount, memtype) <
         kOutputBufferCount) {
         ALOGE("Failed to create V4L2 output buffers.");
         return false;
