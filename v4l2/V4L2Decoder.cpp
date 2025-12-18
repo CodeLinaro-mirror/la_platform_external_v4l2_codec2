@@ -139,6 +139,7 @@ V4L2Decoder::~V4L2Decoder() {
         mInputQueue->deallocateBuffers();
         mInputQueue = nullptr;
     }
+    mInputBuffer.reset();
     if (mDevice) {
         mDevice->stopPolling();
         mDevice = nullptr;
@@ -206,6 +207,18 @@ bool V4L2Decoder::start(const VideoCodec& codec, const size_t inputBufferSize,
         ALOGE("Failed to create V4L2 queue.");
         return false;
     }
+
+    // Current implementation of AU-alignment for H264 and HEVC codecs assume possibility to 
+    // combining several input works into single frame buffer. Appending data to input v4l2 buffer only works
+    // for MMAP memory type where directly copying is used.  
+    if (property_get_bool("ro.vendor.v4l2_codec2.decoder.use_dmabuf_inputqueue", true) &&
+        (codec == VideoCodec::H264 || codec == VideoCodec::HEVC)) {
+        ALOGE("Current implementation of AU-alignment for H264 and HEVC codecs required MMAP memory type for input queue.");
+        return false;
+    }
+
+    mInputBuffer.reset();
+    
     if (!setupInputFormat(inputPixelFormat, inputBufferSize, nullptr)) {
         ALOGE("Failed to setup input format.");
         return false;
@@ -427,7 +440,7 @@ void V4L2Decoder::decode(std::unique_ptr<ConstBitstreamBuffer> buffer, DecodeCB 
     }
 
     if (mState == State::Idle) {
-        setState(State::Decoding);
+        setState(State::Init);
     }
 
     // To determine if the DRC is pending, the access to the frame data is
@@ -447,9 +460,14 @@ void V4L2Decoder::drain(DecodeCB drainCb) {
 
     switch (mState) {
     case State::Idle:
+    case State::Init:
         ALOGV("Nothing need to drain, ignore.");
         mTaskRunner->PostTask(
                 FROM_HERE, ::base::BindOnce(std::move(drainCb), VideoDecoder::DecodeStatus::kOk));
+        if (mInputBuffer) {
+            // Reset current input buffer pointer.
+            mInputBuffer.reset();
+        }
         return;
 
     case State::Decoding:
@@ -471,7 +489,7 @@ void V4L2Decoder::pumpDecodeRequest() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
-    if (mState != State::Decoding) return;
+    if ((mState != State::Decoding) && (mState != State::Init)) return;
 
     while (!mDecodeRequests.empty()) {
         // Drain the decoder.
@@ -515,85 +533,135 @@ void V4L2Decoder::pumpDecodeRequest() {
             return;
         }
 
-        auto dma_buf_id = getDmabufId(mDecodeRequests.front().buffer->dmabuf.handle()->data[0]);
-        if (!dma_buf_id) {
-            ALOGE("Failed to get dmabuf id");
-            onError();
-            return;
-        }
-
-        std::optional<V4L2WritableBufferRef> inputBuffer;
-        size_t targetIndex = 0;
-
-        // If there's an existing input buffer for this dma buffer, use it.
-        for (; targetIndex < mNextInputBufferId; targetIndex++) {
-            if (mLastDmaBufferId[targetIndex] == dma_buf_id) {
-                break;
-            }
-        }
-
-        if (targetIndex < kNumInputBuffers) {
-            // If we didn't find a buffer and there is an unused buffer, use that one.
-            if (targetIndex == mNextInputBufferId) {
-                mNextInputBufferId++;
-            }
-
-            inputBuffer = mInputQueue->getFreeBuffer(targetIndex);
-        }
-
-        // If we didn't find a reusable/unused input buffer, clobber a free one.
-        if (!inputBuffer) {
-            inputBuffer = mInputQueue->getFreeBuffer();
-        }
-
-        // Pause if no free input buffer. We resume decoding after dequeueing input buffers.
-        if (!inputBuffer) {
-            ALOGV("There is no free input buffer.");
-            return;
-        }
-
-        mLastDmaBufferId[inputBuffer->bufferId()] = *dma_buf_id;
-
         auto request = std::move(mDecodeRequests.front());
+        auto flags = request.buffer->flags;
+        int64_t bitstreamId = request.buffer->id;
+
+        // Initialized input buffer.
+        if (flags & ConstBitstreamBuffer::StatusFlag::Init) {
+            auto dma_buf_id = getDmabufId(request.buffer->dmabuf.handle()->data[0]);
+            if (!dma_buf_id) {
+                ALOGE("Failed to get dmabuf id");
+                onError();
+                return;
+            }
+            size_t targetIndex = 0;
+            // If there's an existing input buffer for this dma buffer, use it.
+            for (; targetIndex < mNextInputBufferId; targetIndex++) {
+                if (mLastDmaBufferId[targetIndex] == dma_buf_id) {
+                    break;
+                }
+            }
+
+            if (targetIndex < kNumInputBuffers) {
+                // If we didn't find a buffer and there is an unused buffer, use that one.
+                if (targetIndex == mNextInputBufferId) {
+                    mNextInputBufferId++;
+                }
+
+                mInputBuffer = mInputQueue->getFreeBuffer(targetIndex);
+            }
+
+            // If we didn't find a reusable/unused input buffer, clobber a free one.
+            if (!mInputBuffer) {
+                mInputBuffer = mInputQueue->getFreeBuffer();
+            }
+
+            // Pause if no free input buffer. We resume decoding after dequeueing input buffers.
+            if (!mInputBuffer) {
+                ALOGV("There is no free input buffer.");
+                return;
+            }
+
+            mLastDmaBufferId[mInputBuffer->bufferId()] = *dma_buf_id;
+
+            ALOGV("Prepare input buffer, bitstreamId=%ld", bitstreamId);
+            mInputBuffer->setTimeStamp(
+            {.tv_sec = static_cast<time_t>(bitstreamId / ::base::Time::kMicrosecondsPerSecond),
+            .tv_usec = static_cast<time_t>(bitstreamId % ::base::Time::kMicrosecondsPerSecond)});
+            size_t planeSize = mInputBuffer->getPlaneSize(0);
+            if (request.buffer->size > planeSize) {
+                ALOGE("The input size (%zu) is not enough, we need %zu", planeSize,
+                    request.buffer->size);
+                onError();
+                return;
+            }
+
+            ALOGV("Set bytes_used=%zu, offset=%zu", request.buffer->offset + request.buffer->size,
+            request.buffer->offset);
+
+            mInputBuffer->setPlaneDataOffset(0, request.buffer->offset);
+            mInputBuffer->setPlaneBytesUsed(0, request.buffer->offset + request.buffer->size);
+
+            if (mInputBuffer->memory() == V4L2_MEMORY_MMAP) {
+                mInputBuffer->fillBuffer(request.buffer->data, request.buffer->offset, request.buffer->size);
+            }
+        } else {
+            if (!mInputBuffer) {
+                ALOGE("There is no initialized input buffer.");
+                onError();
+                return;
+            }
+        }
+
         mDecodeRequests.pop();
 
-        const int64_t bitstreamId = request.buffer->id;
-        ALOGV("QBUF to input queue, bitstreadId=%ld", bitstreamId);
-        inputBuffer->setTimeStamp(
-            {.tv_sec = static_cast<time_t>(bitstreamId / ::base::Time::kMicrosecondsPerSecond),
-             .tv_usec = static_cast<time_t>(bitstreamId % ::base::Time::kMicrosecondsPerSecond)});
-        size_t planeSize = inputBuffer->getPlaneSize(0);
-        if (request.buffer->size > planeSize) {
-            ALOGE("The input size (%zu) is not enough, we need %zu", planeSize,
-                  request.buffer->size);
-            onError();
-            return;
+        // Append data to initialized buffer.
+        if (flags & ConstBitstreamBuffer::StatusFlag::Append) {
+            if (mInputBuffer->memory() == V4L2_MEMORY_MMAP) {
+                // Get bitstreamId of current input buffer.
+                bitstreamId = static_cast<int64_t>(
+                    mInputBuffer->getTimeStamp().tv_usec +
+                    mInputBuffer->getTimeStamp().tv_sec * ::base::Time::kMicrosecondsPerSecond);
+                ALOGV("Append input buffer, bitstreamId=%ld", bitstreamId);
+                size_t planeSize = mInputBuffer->getPlaneSize(0);
+                if (mInputBuffer->getPlaneBytesUsed(0) + request.buffer->size > planeSize) {
+                    ALOGE("The input size (%zu) is not enough, we need %zu", planeSize,
+                        mInputBuffer->getPlaneBytesUsed(0) + request.buffer->size);
+                    onError();
+                    return;
+                }
+
+                ALOGV("Append bytes_used=%zu", request.buffer->size);
+
+                mInputBuffer->fillBuffer(request.buffer->data, mInputBuffer->getPlaneBytesUsed(0), request.buffer->size);
+                mInputBuffer->setPlaneBytesUsed(0, mInputBuffer->getPlaneBytesUsed(0) + request.buffer->size);
+            } else {
+                ALOGE("Appending input buffer works only for MMAP memory type");
+            }
         }
 
-        ALOGV("Set bytes_used=%zu, offset=%zu", request.buffer->offset + request.buffer->size,
-              request.buffer->offset);
+        // Put buffer to input queue.
+        if (flags & ConstBitstreamBuffer::StatusFlag::Send) {
+            // Get bitstreamId of current input buffer.
+            bitstreamId = static_cast<int64_t>(
+                mInputBuffer->getTimeStamp().tv_usec +
+                mInputBuffer->getTimeStamp().tv_sec * ::base::Time::kMicrosecondsPerSecond);
+            ALOGV("QBUF to input queue, bitstreamId=%ld", bitstreamId);
+            bool result;
+            if (mInputBuffer->memory() == V4L2_MEMORY_MMAP) {
+                result = std::move(*mInputBuffer).queueMMap();
+            } else {
+                std::vector<int> fds;
+                fds.push_back(std::move(request.buffer->dmabuf.handle()->data[0]));
+                result = std::move(*mInputBuffer).queueDMABuf(fds);
+            }
 
-        bool result;
+            if (!result) {
+                ALOGE("%s(): Failed to QBUF to input queue, bitstreamId=%ld", __func__, bitstreamId);
+                onError();
+                return;
+            }
 
-        inputBuffer->setPlaneDataOffset(0, request.buffer->offset);
-        inputBuffer->setPlaneBytesUsed(0, request.buffer->offset + request.buffer->size);
+            mPendingDecodeCbs.insert(std::make_pair(bitstreamId, std::move(request.decodeCb)));
 
-        if (inputBuffer->memory() == V4L2_MEMORY_MMAP) {
-            inputBuffer->fillBuffer(request.buffer->data, request.buffer->offset, request.buffer->size);
-            result = std::move(*inputBuffer).queueMMap();
-        } else {
-            std::vector<int> fds;
-            fds.push_back(std::move(request.buffer->dmabuf.handle()->data[0]));
-            result = std::move(*inputBuffer).queueDMABuf(fds);
+            if (mState == State::Init) {
+                setState(State::Decoding);
+            }
+
+            // Reset current input buffer pointer.
+            mInputBuffer.reset();
         }
-
-        if (!result) {
-            ALOGE("%s(): Failed to QBUF to input queue, bitstreamId=%d", __func__, bitstreamId);
-            onError();
-            return;
-        }
-
-        mPendingDecodeCbs.insert(std::make_pair(bitstreamId, std::move(request.decodeCb)));
     }
 }
 
@@ -1133,6 +1201,8 @@ void V4L2Decoder::setState(State newState) {
     switch (newState) {
     case State::Idle:
         break;
+    case State::Init:
+        break;
     case State::Decoding:
         break;
     case State::Draining:
@@ -1151,6 +1221,8 @@ const char* V4L2Decoder::StateToString(State state) {
     switch (state) {
     case State::Idle:
         return "Idle";
+    case State::Init:
+        return "Init";
     case State::Decoding:
         return "Decoding";
     case State::Draining:
