@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2DecodeComponent"
 
@@ -96,10 +100,11 @@ void V4L2DecodeComponent::startTask(c2_status_t* status, ::base::WaitableEvent* 
     }
     const size_t inputBufferSize = mIntfImpl->getInputBufferSize();
     const size_t minNumOutputBuffers = getMinNumOutputBuffers(*codec);
+    const HalPixelFormat outputPixelFormat = mIntfImpl->getOutputPixelFormat();
 
     // ::base::Unretained(this) is safe here because |mDecoder| is always destroyed before
     // |mDecoderThread| is stopped, so |*this| is always valid during |mDecoder|'s lifetime.
-    mDecoder = V4L2Decoder::Create(mDebugStreamId, *codec, inputBufferSize, minNumOutputBuffers,
+    mDecoder = V4L2Decoder::Create(mDebugStreamId, *codec, inputBufferSize, minNumOutputBuffers, outputPixelFormat,
                                    ::base::BindRepeating(&V4L2DecodeComponent::getVideoFramePool,
                                                          ::base::Unretained(this)),
                                    ::base::BindRepeating(&V4L2DecodeComponent::onOutputFrameReady,
