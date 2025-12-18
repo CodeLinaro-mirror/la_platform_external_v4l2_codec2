@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define ATRACE_TAG ATRACE_TAG_VIDEO
 #define LOG_TAG "FormatConverter"
@@ -208,7 +212,7 @@ c2_status_t FormatConverter::convertBlock(uint64_t frameIndex,
         // There is only RGBA_8888 specified in C2AllocationGralloc::map(), no BGRA_8888. Maybe
         // BGRA_8888 is not used now?
         inputFormat = VideoPixelFormat::ABGR;
-        inputLayout.type = C2PlanarLayout::TYPE_RGB;
+        inputLayout.type = C2PlanarLayout::TYPE_RGBA;
     } else {
         ALOGE("Failed to determine input pixel format: %u", inputLayout.type);
         return C2_CORRUPTED;
@@ -284,7 +288,7 @@ c2_status_t FormatConverter::convertBlock(uint64_t frameIndex,
                   videoPixelFormatToString(mOutFormat).c_str());
             return C2_CORRUPTED;
         }
-    } else if (inputLayout.type == C2PlanarLayout::TYPE_RGB) {
+    } else if ((inputLayout.type == C2PlanarLayout::TYPE_RGB) || (inputLayout.type == C2PlanarLayout::TYPE_RGBA)) {
         const uint8_t* srcRGB = (idMap) ? idMap->addr() : inputView.data()[C2PlanarLayout::PLANE_R];
         const int srcStrideRGB =
                 (idMap) ? idMap->rowInc() : inputLayout.planes[C2PlanarLayout::PLANE_R].rowInc;
