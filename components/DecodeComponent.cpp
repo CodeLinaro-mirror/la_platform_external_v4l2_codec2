@@ -463,8 +463,9 @@ void DecodeComponent::processWork(const int64_t bitstreamId, const C2Work* work)
 
 void DecodeComponent::processWorkBuffer(const int64_t bitstreamId,
                                         const C2ConstLinearBlock& linearBlock) {
+    C2ReadView view = linearBlock.map().get();
     std::unique_ptr<ConstBitstreamBuffer> buffer = std::make_unique<ConstBitstreamBuffer>(
-            bitstreamId, linearBlock, linearBlock.offset(), linearBlock.size());
+            bitstreamId, linearBlock, linearBlock.offset(), linearBlock.size(), view.data());
     if (!buffer) {
         reportError(C2_CORRUPTED);
         return;

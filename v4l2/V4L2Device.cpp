@@ -5,6 +5,10 @@
 // Note: Added some missing defines that are only defined in newer kernel
 //       versions (e.g. V4L2_PIX_FMT_VP8_FRAME)
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define ATRACE_TAG ATRACE_TAG_VIDEO
 #define LOG_TAG "V4L2Device"
@@ -155,7 +159,6 @@ V4L2Buffer::V4L2Buffer(scoped_refptr<V4L2Device> device, enum v4l2_buf_type type
     mV4l2Buffer.index = bufferId;
     mV4l2Buffer.type = type;
     mV4l2Buffer.memory = memory;
-    mV4l2Buffer.memory = V4L2_MEMORY_DMABUF;
     mPlaneMappings.resize(mV4l2Buffer.length);
 }
 
@@ -500,6 +503,30 @@ bool V4L2WritableBufferRef::queueDMABuf(const std::vector<int>& fds) && {
     for (size_t i = 0; i < numPlanes; i++) self.mBufferData->mV4l2Buffer.m.planes[i].m.fd = fds[i];
 
     return std::move(self).doQueue();
+}
+
+bool V4L2WritableBufferRef::fillBuffer(const uint8_t *data, const size_t offset,
+                                       const size_t size) {
+    if (!data) {
+        ALOGE("Source data pointer is NULL");
+        return false;
+    }
+
+    size_t planeSize = getPlaneSize(0);
+    if (size > planeSize) {
+        ALOGE("The input size (%zu) is not enough, we need %zu", planeSize, size);
+        return false;
+    }
+
+    uint8_t *v4l2bufData = (uint8_t *) getPlaneMapping(0);
+    if (!v4l2bufData) {
+        ALOGE("Failed to get plane 0 mapping");
+        return false;
+    }
+
+    memcpy(v4l2bufData + offset, data, size);
+
+    return true;
 }
 
 size_t V4L2WritableBufferRef::planesCount() const {

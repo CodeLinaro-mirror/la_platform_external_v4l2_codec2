@@ -6,6 +6,10 @@
 // delegate/pass the device specific handling of any of the functionalities.
 // Note: ported from Chromium commit head: 2f13d62f0c0d, but some parts have been removed.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_V4L2_V4L2_DEVICE_H
 #define ANDROID_V4L2_CODEC2_V4L2_V4L2_DEVICE_H
 
@@ -106,6 +110,8 @@ public:
     // |plane|th plane. In case of error (invalid plane index or mapping failed), a nullptr is
     // returned.
     void* getPlaneMapping(const size_t plane);
+    // Fill v4l2buffer with data
+    bool fillBuffer(const uint8_t *data, const size_t offset, const size_t size);
     // Set the timestamp field for this buffer.
     void setTimeStamp(const struct timeval& timestamp);
     // Return the previously-set timestamp field for this buffer.
