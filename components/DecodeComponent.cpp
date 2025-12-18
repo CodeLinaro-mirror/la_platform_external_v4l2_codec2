@@ -48,54 +48,6 @@ int64_t timestampToBitstreamId(c2_cntr64_t timestamp, c2_cntr64_t frameIndex) {
     return static_cast<int64_t>(timestamp.peekll() + frameIndex.peekll() + INT32_MAX);
 }
 
-bool parseCodedColorAspects(const C2ConstLinearBlock& input, std::optional<VideoCodec> codec,
-                            C2StreamColorAspectsInfo::input* codedAspects) {
-    C2ReadView view = input.map().get();
-    NalParser::ColorAspects aspects;
-    std::unique_ptr<NalParser> parser;
-    if (codec == VideoCodec::H264) {
-        parser = std::make_unique<H264NalParser>(view.data(), view.capacity());
-    } else if (codec == VideoCodec::HEVC) {
-        parser = std::make_unique<HEVCNalParser>(view.data(), view.capacity());
-    } else {
-        ALOGV("Unsupported codec for finding color aspects");
-        return false;
-    }
-
-    if (!parser->locateSPS()) {
-        ALOGV("Couldn't find SPS");
-        return false;
-    }
-
-    if (!parser->findCodedColorAspects(&aspects)) {
-        ALOGV("Couldn't find color description in SPS");
-        return false;
-    }
-
-    // Convert ISO color aspects to ColorUtils::ColorAspects.
-    ColorAspects colorAspects;
-    ColorUtils::convertIsoColorAspectsToCodecAspects(
-            aspects.primaries, aspects.transfer, aspects.coeffs, aspects.fullRange, colorAspects);
-    ALOGV("Parsed ColorAspects from bitstream: (R:%d, P:%d, M:%d, T:%d)", colorAspects.mRange,
-          colorAspects.mPrimaries, colorAspects.mMatrixCoeffs, colorAspects.mTransfer);
-
-    // Map ColorUtils::ColorAspects to C2StreamColorAspectsInfo::input parameter.
-    if (!C2Mapper::map(colorAspects.mPrimaries, &codedAspects->primaries)) {
-        codedAspects->primaries = C2Color::PRIMARIES_UNSPECIFIED;
-    }
-    if (!C2Mapper::map(colorAspects.mRange, &codedAspects->range)) {
-        codedAspects->range = C2Color::RANGE_UNSPECIFIED;
-    }
-    if (!C2Mapper::map(colorAspects.mMatrixCoeffs, &codedAspects->matrix)) {
-        codedAspects->matrix = C2Color::MATRIX_UNSPECIFIED;
-    }
-    if (!C2Mapper::map(colorAspects.mTransfer, &codedAspects->transfer)) {
-        codedAspects->transfer = C2Color::TRANSFER_UNSPECIFIED;
-    }
-
-    return true;
-}
-
 bool isWorkDone(const C2Work& work, int64_t bitstreamId) {
     // Exception: EOS work should be processed by reportEOSWork().
     // Always return false here no matter the work is actually done.
@@ -409,6 +361,56 @@ void DecodeComponent::pumpPendingWorks() {
     }
 }
 
+bool DecodeComponent::getCodedColorAspectsFromBitstream(C2StreamColorAspectsInfo::input* codedAspects) {
+    NalParser::ColorAspects aspects;
+    if (!mNalParser->findCodedColorAspects(&aspects)) {
+        ALOGV("Couldn't find color description in SPS");
+        return false;
+    }
+
+    // Convert ISO color aspects to ColorUtils::ColorAspects.
+    ColorAspects colorAspects;
+    ColorUtils::convertIsoColorAspectsToCodecAspects(
+            aspects.primaries, aspects.transfer, aspects.coeffs, aspects.fullRange, colorAspects);
+    ALOGV("Parsed ColorAspects from bitstream: (R:%d, P:%d, M:%d, T:%d)", colorAspects.mRange,
+          colorAspects.mPrimaries, colorAspects.mMatrixCoeffs, colorAspects.mTransfer);
+
+    // Map ColorUtils::ColorAspects to C2StreamColorAspectsInfo::input parameter.
+    if (!C2Mapper::map(colorAspects.mPrimaries, &codedAspects->primaries)) {
+        codedAspects->primaries = C2Color::PRIMARIES_UNSPECIFIED;
+    }
+    if (!C2Mapper::map(colorAspects.mRange, &codedAspects->range)) {
+        codedAspects->range = C2Color::RANGE_UNSPECIFIED;
+    }
+    if (!C2Mapper::map(colorAspects.mMatrixCoeffs, &codedAspects->matrix)) {
+        codedAspects->matrix = C2Color::MATRIX_UNSPECIFIED;
+    }
+    if (!C2Mapper::map(colorAspects.mTransfer, &codedAspects->transfer)) {
+        codedAspects->transfer = C2Color::TRANSFER_UNSPECIFIED;
+    }
+
+    return true;
+}
+
+void DecodeComponent::checkCodedColorAspects(const C2Work* work) {
+    // Try to parse color aspects from bitstream.
+    C2StreamColorAspectsInfo::input codedAspects = {0u};
+    if (getCodedColorAspectsFromBitstream(&codedAspects)) {
+        std::vector<std::unique_ptr<C2SettingResult>> failures;
+        c2_status_t status =
+                mIntfImpl->config({&codedAspects}, C2_MAY_BLOCK, &failures);
+        if (status != C2_OK) {
+            ALOGE("Failed to config color aspects to interface: %d", status);
+            reportError(status);
+            return;
+        }
+        // Record current frame index, color aspects should be updated only for output
+        // buffers whose frame indices are not less than this one.
+        mPendingColorAspectsChange = true;
+        mPendingColorAspectsChangeFrameIndex = work->input.ordinal.frameIndex.peeku();
+    }
+}
+
 void DecodeComponent::processCSDWork(const int64_t bitstreamId, const C2Work* work) {
     // If input.buffers is not empty, the buffer should have meaningful content inside.
     C2ConstLinearBlock linearBlock = work->input.buffers.front()->data().linearBlocks().front();
@@ -423,22 +425,7 @@ void DecodeComponent::processCSDWork(const int64_t bitstreamId, const C2Work* wo
         return;
     } else if ((!mIsSecure && mIntfImpl->getVideoCodec() == VideoCodec::H264) ||
                mIntfImpl->getVideoCodec() == VideoCodec::HEVC) {
-        // Try to parse color aspects from bitstream for CSD work of non-secure H264 codec or HEVC
-        // codec (HEVC will only be CENCv3 which is parseable for secure).
-        C2StreamColorAspectsInfo::input codedAspects = {0u};
-        if (parseCodedColorAspects(linearBlock, mIntfImpl->getVideoCodec(), &codedAspects)) {
-            std::vector<std::unique_ptr<C2SettingResult>> failures;
-            c2_status_t status = mIntfImpl->config({&codedAspects}, C2_MAY_BLOCK, &failures);
-            if (status != C2_OK) {
-                ALOGE("Failed to config color aspects to interface: %d", status);
-                reportError(status);
-                return;
-            }
-            // Record current frame index, color aspects should be updated only for output
-            // buffers whose frame indices are not less than this one.
-            mPendingColorAspectsChange = true;
-            mPendingColorAspectsChangeFrameIndex = work->input.ordinal.frameIndex.peeku();
-        }
+        checkCodedColorAspects(work);
     }
 
     processWorkBuffer(bitstreamId, linearBlock);
