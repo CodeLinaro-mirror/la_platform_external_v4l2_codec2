@@ -181,7 +181,7 @@ DecodeInterface::DecodeInterface(const std::string& name,
                       C2Config::LEVEL_AVC_2_1, C2Config::LEVEL_AVC_2_2, C2Config::LEVEL_AVC_3,
                       C2Config::LEVEL_AVC_3_1, C2Config::LEVEL_AVC_3_2, C2Config::LEVEL_AVC_4,
                       C2Config::LEVEL_AVC_4_1, C2Config::LEVEL_AVC_4_2, C2Config::LEVEL_AVC_5,
-                      C2Config::LEVEL_AVC_5_1, C2Config::LEVEL_AVC_5_2};
+                      C2Config::LEVEL_AVC_5_1, C2Config::LEVEL_AVC_5_2, C2Config::LEVEL_AVC_6};
             break;
         case VideoCodec::VP8:
             levels = {C2Config::LEVEL_UNUSED};
