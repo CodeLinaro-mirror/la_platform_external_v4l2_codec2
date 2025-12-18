@@ -120,6 +120,9 @@ void V4L2DecodeComponent::startTask(c2_status_t* status, ::base::WaitableEvent* 
             ALOGE("Failed to create NAL parser for %s", VideoCodecToString(*codec));
             return;
         }
+
+        mInputAUAlign = true;
+        mInputBitstreamIds.clear();
     }
 
     // ::base::Unretained(this) is safe here because |mDecoder| is always destroyed before

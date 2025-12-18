@@ -59,8 +59,7 @@ bool isWorkDone(const C2Work& work, int64_t bitstreamId) {
     //    or the input buffer is CSD, or we decide to drop the frame.
     bool inputReleased = (work.input.buffers.front() == nullptr);
     bool outputReturned = !work.worklets.front()->output.buffers.empty();
-    bool ignoreOutput = (work.input.flags & C2FrameData::FLAG_CODEC_CONFIG) ||
-                        (work.worklets.front()->output.flags & C2FrameData::FLAG_DROP_FRAME);
+    bool ignoreOutput = (work.worklets.front()->output.flags & C2FrameData::FLAG_DROP_FRAME);
     ALOGV("work(%ld): inputReleased: %d, outputReturned: %d, ignoreOutput: %d", bitstreamId,
           inputReleased, outputReturned, ignoreOutput);
     return inputReleased && (outputReturned || ignoreOutput);
@@ -193,6 +192,8 @@ void DecodeComponent::stopTask() {
 
     reportAbandonedWorks();
     mIsDraining = false;
+    mInputAUAlign = true;
+    mInputBitstreamIds.clear();
 
     releaseTask();
 }
@@ -343,21 +344,19 @@ void DecodeComponent::pumpPendingWorks() {
         auto res = mWorksAtDecoder.insert(std::make_pair(bitstreamId, std::move(pendingWork)));
         ALOGW_IF(!res.second, "We already inserted bitstreamId %ld to decoder?", bitstreamId);
 
-        if (!isEmptyWork) {
-            if (isCSDWork) {
-                processCSDWork(bitstreamId, work);
-            } else {
-                processWork(bitstreamId, work);
-            }
-        }
+        processInputWork(bitstreamId, work, isCSDWork, isEOSWork, isEmptyWork);
 
         if (isEOSWork) {
             mDecoder->drain(::base::BindOnce(&DecodeComponent::onDrainDone, mWeakThis));
             mIsDraining = true;
         }
 
-        // Directly report the empty CSD work as finished.
-        if (isCSDWork && isEmptyWork) reportWorkIfFinished(bitstreamId);
+        // Directly report the empty CSD and non-EOS work as finished.
+        if (isEmptyWork && !isEOSWork) {
+            work->worklets.front()->output.flags = C2FrameData::FLAG_DROP_FRAME;
+            reportWorkIfFinished(bitstreamId);
+            return;
+        }
     }
 }
 
@@ -411,45 +410,187 @@ void DecodeComponent::checkCodedColorAspects(const C2Work* work) {
     }
 }
 
-void DecodeComponent::processCSDWork(const int64_t bitstreamId, const C2Work* work) {
-    // If input.buffers is not empty, the buffer should have meaningful content inside.
-    C2ConstLinearBlock linearBlock = work->input.buffers.front()->data().linearBlocks().front();
-    ALOG_ASSERT(linearBlock.size() > 0u, "Input buffer of work(%ld) is empty.", bitstreamId);
-
-    if (mIntfImpl->getVideoCodec() == VideoCodec::VP9) {
-        // The VP9 decoder does not support and does not need the Codec Specific Data (CSD):
-        // https://www.webmproject.org/docs/container/#vp9-codec-feature-metadata-codecprivate.
-        // The most of its content (profile, level, bit depth and chroma subsampling)
-        // can be extracted directly from VP9 bitstream. Ignore CSD if it was passed.
-        reportWorkIfFinished(bitstreamId);
-        return;
-    } else if ((!mIsSecure && mIntfImpl->getVideoCodec() == VideoCodec::H264) ||
-               mIntfImpl->getVideoCodec() == VideoCodec::HEVC) {
-        checkCodedColorAspects(work);
+// Get last input work of current AU and trigger send action with it.
+void DecodeComponent::sendLastAccessUnit() {
+    int64_t id = mInputBitstreamIds.back();
+    auto it = mWorksAtDecoder.find(id);
+    if (it != mWorksAtDecoder.end()) {
+        C2ConstLinearBlock block = 
+            it->second.get()->input.buffers.front()->data().linearBlocks().front();
+        uint8_t flags = ConstBitstreamBuffer::StatusFlag::Send;
+        processWorkBuffer(id, block, flags);
+        ALOGV("Send last Access Unit bitstreamId=%ld", id);
     }
-
-    processWorkBuffer(bitstreamId, linearBlock);
 }
 
-void DecodeComponent::processWork(const int64_t bitstreamId, const C2Work* work) {
+// Report Access Unit works as dropped frame.
+void DecodeComponent::reportAccessUnitWorks() { 
+    while (!mInputBitstreamIds.empty()) {
+        auto it = mWorksAtDecoder.find(mInputBitstreamIds.front());
+        if (it != mWorksAtDecoder.end()) {
+            it->second.get()->input.buffers.front().reset();
+            it->second.get()->worklets.front()->output.flags = C2FrameData::FLAG_DROP_FRAME;
+            reportWorkIfFinished(mInputBitstreamIds.front());
+        }
+        mInputBitstreamIds.pop_front();
+    }
+}
+
+
+void DecodeComponent::processInputWork(const int64_t bitstreamId, const C2Work* work, 
+                                                                      const bool isCSDWork, 
+                                                                      const bool isEOSWork, 
+                                                                      const bool isEmptyWork) {
+    auto codec = mIntfImpl->getVideoCodec();
+    uint8_t flags = 0;
+
+    // Skip empty buffer processing.
+    if (isEmptyWork) {
+        // Handle specific input case - EOS work with empty buffer when previous input is not AU-align.
+        // First check if current Access Unit is non-CSD which means that it contain VCL NALs.
+        // In this case, send remaining inputs for decoding after receiving empty EOS.
+        // Get last input work of current AU and trigger send action with it.
+        // The CSD input contains only non-VCL NALs (SPS, PPS, etc.). There is nothing to decode in that case.
+        // Report Access Unit works as dropped frame.
+        // Clear NAL parser as no more NALs is expected for current stream.
+        if (isEOSWork && !mInputAUAlign) {
+            NalParser::AccessUnit* au = mNalParser->frontAccessUnit();
+            if (au->vclFound) {
+                sendLastAccessUnit();
+            } else {
+                reportAccessUnitWorks();
+                mInputAUAlign = true;
+            }        
+
+            mNalParser->clearAccessUnits();
+        }
+        return;
+    }
+
     // If input.buffers is not empty, the buffer should have meaningful content inside.
     C2ConstLinearBlock linearBlock = work->input.buffers.front()->data().linearBlocks().front();
     ALOG_ASSERT(linearBlock.size() > 0u, "Input buffer of work(%ld) is empty.", bitstreamId);
 
-    processWorkBuffer(bitstreamId, linearBlock);
+    switch (codec.value()) {
+    case VideoCodec::VP9:
+        if (isCSDWork) {
+            // The VP9 decoder does not support and does not need the Codec Specific Data (CSD):
+            // https://www.webmproject.org/docs/container/#vp9-codec-feature-metadata-codecprivate.
+            // The most of its content (profile, level, bit depth and chroma subsampling)
+            // can be extracted directly from VP9 bitstream. Ignore CSD if it was passed.
+            reportWorkIfFinished(bitstreamId);
+            return;
+        }
+        flags = ConstBitstreamBuffer::StatusFlag::Init | ConstBitstreamBuffer::StatusFlag::Send;
+        break;
+    case VideoCodec::VP8:
+        flags = ConstBitstreamBuffer::StatusFlag::Init | ConstBitstreamBuffer::StatusFlag::Send;
+        break;
+    case VideoCodec::H264:
+    case VideoCodec::HEVC:
+        C2ReadView view = linearBlock.map().get();
+        // Load data from current input buffer to parser.
+        mNalParser->loadData(view.data(), view.capacity());
+        // Check coded color aspects in bitstream for CSD work.
+        if (isCSDWork) {
+            checkCodedColorAspects(work);
+        }
+
+        // Parse NAL units from current input buffer.
+        bool completed = mNalParser->parse();
+        if (!completed){
+            // If input is not AU-align cache data in v4l2 buffer.
+            // For first input of current AU set Init flag to initalized v4l2 buffer.
+            // mInputAUAlign = false indicates that input is not AU-align.
+            // All subsequent buffers that belong to the same AU are added to the initial one.
+            // Push current bitstreamId to ids queue. 
+            ALOGV("Input not align to Access Unit");
+            if (mInputAUAlign) {
+                mInputAUAlign = false;
+                flags = ConstBitstreamBuffer::StatusFlag::Init;
+            } else {
+                flags = ConstBitstreamBuffer::StatusFlag::Append;
+            }
+            mInputBitstreamIds.push_back(bitstreamId);
+        } else {
+            // If input id AU-align the v4l2 buffer is ready to send for decoding.
+            // Pop first Access Unit and set Send flag for current work.
+            // If it is single buffer in current AU set Init flag to initalized v4l2 buffer before send.
+            // If there is more then one input in current AU send cached data.   
+            ALOGV("Input align to Access Unit");
+            mNalParser->popAccessUnit();
+            flags = ConstBitstreamBuffer::StatusFlag::Send;
+            if (mInputAUAlign) {
+                flags |= ConstBitstreamBuffer::StatusFlag::Init;
+            } else {
+                NalParser::AccessUnit* au = mNalParser->frontAccessUnit();
+                ALOG_ASSERT(au, "Parsing Access Unit failure");
+                if (au->completed) {
+                    flags |= ConstBitstreamBuffer::StatusFlag::Append;
+                    mInputBitstreamIds.push_back(bitstreamId);
+                    mNalParser->popAccessUnit();
+                } else {
+                    processWorkBuffer(bitstreamId, linearBlock, flags);
+                    flags = ConstBitstreamBuffer::StatusFlag::Init;
+                    mInputAUAlign = false;
+                    mInputBitstreamIds.push_back(bitstreamId);
+                }
+            }
+        }
+
+        // If current work is EOS send current buffer directly.
+        // Clear NAL parser as no more NALs is expected for current stream.
+        if (isEOSWork) {
+           flags |= ConstBitstreamBuffer::StatusFlag::Send;
+           mNalParser->clearAccessUnits();
+        }
+
+        break;
+    }
+
+    processWorkBuffer(bitstreamId, linearBlock, flags);
 }
 
 void DecodeComponent::processWorkBuffer(const int64_t bitstreamId,
-                                        const C2ConstLinearBlock& linearBlock) {
+                                            const C2ConstLinearBlock& linearBlock, const uint8_t flags) {
+
     C2ReadView view = linearBlock.map().get();
+    
     std::unique_ptr<ConstBitstreamBuffer> buffer = std::make_unique<ConstBitstreamBuffer>(
-            bitstreamId, linearBlock, linearBlock.offset(), linearBlock.size(), view.data());
+                    bitstreamId, linearBlock, linearBlock.offset(), linearBlock.size(), view.data(), flags);
     if (!buffer) {
         reportError(C2_CORRUPTED);
         return;
     }
-    mDecoder->decode(std::move(buffer),
-                     ::base::BindOnce(&DecodeComponent::onDecodeDone, mWeakThis, bitstreamId));
+
+    int64_t id = bitstreamId;
+    // If mInputAUAlign=false and Send flag is set this means to send AU-align buffer for decoding.
+    // Get bitstreamId of first and last input works for current AU.
+    // Report all works except the last one for a current AU.
+    // If AU is not single input work, replace the bitstreamId of the last working AU with that of the first AU.
+    // As a result all input buffers that belongs to single Access Unit are send in one v4l2 buffer 
+    // with first work timestamp.
+    // Report all input works expect the last one with drop flag before decoding. 
+    // The last work with first bitstreamId is still in works queue and it is reported as decoded work. 
+    // Clear mInputAUAlign flag in last step.
+    if (!mInputAUAlign && (flags & ConstBitstreamBuffer::StatusFlag::Send)) {
+        id = mInputBitstreamIds.front();
+        int64_t lastInputId = mInputBitstreamIds.back();
+        mInputBitstreamIds.pop_back();
+        reportAccessUnitWorks();
+
+        if (id != lastInputId) {
+            auto it = mWorksAtDecoder.find(lastInputId);
+            ALOG_ASSERT(it != mWorksAtDecoder.end());
+            auto res = mWorksAtDecoder.insert(std::make_pair(id, std::move(it->second)));
+            ALOGW_IF(!res.second, "We already inserted bitstreamId %ld to decoder?", id);
+            mWorksAtDecoder.erase(it);
+        }
+
+        mInputAUAlign = true;
+    }
+    mDecoder->decode(std::move(buffer), ::base::BindOnce(&DecodeComponent::onDecodeDone,
+                                                                 mWeakThis, id));
 }
 
 void DecodeComponent::onDecodeDone(int64_t bitstreamId, VideoDecoder::DecodeStatus status) {
@@ -479,11 +620,6 @@ void DecodeComponent::onDecodeDone(int64_t bitstreamId, VideoDecoder::DecodeStat
     case VideoDecoder::DecodeStatus::kOk:
         // Release the input buffer.
         work->input.buffers.front().reset();
-
-        // CSD Work doesn't have output buffer, the corresponding onOutputFrameReady() won't be
-        // called. Push the bitstreamId here.
-        if (work->input.flags & C2FrameData::FLAG_CODEC_CONFIG)
-            mOutputBitstreamIds.push(bitstreamId);
 
         pumpReportWork();
         return;
@@ -685,6 +821,23 @@ void DecodeComponent::flushTask() {
     ATRACE_CALL();
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
+
+    // Check if it is non-CSD flushing.
+    // When flushing event comes before sending first frame for decoding
+    // caching input data is required. For example, when input contain only non-VCL NALs (SPS, PPS, etc)
+    // after flushing we lose decoding configuration and next inputs with coded frames will not be 
+    // properly decoded.
+    // If flushing happens during further decoding (parser collected coded frame) send remaining 
+    // input buffer for decoding. It is non-CSD flushing case.
+    // If current Access Unit contains VCL NALs, get last input work of current AU 
+    // and trigger send action with it.
+    // Clear NAL parser as as there will be no continuity of this stream.
+    if (!mInputAUAlign) {
+        NalParser::AccessUnit* au = mNalParser->frontAccessUnit();
+        if (au->vclFound) {
+            sendLastAccessUnit();
+        }
+    }
 
     mDecoder->flush();
     reportAbandonedWorks();
