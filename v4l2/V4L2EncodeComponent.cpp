@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2EncodeComponent"
 
@@ -98,6 +102,7 @@ bool V4L2EncodeComponent::initializeEncoder() {
             outputProfile, h264Level, mInterface->getInputVisibleSize(), *stride,
             mInterface->getKeyFramePeriod(), mBitrateMode, mBitrate,
             mBitrate * VideoEncoder::kPeakBitrateMultiplier,
+            mInterface->getColorAspects(),
             ::base::BindRepeating(&V4L2EncodeComponent::fetchOutputBlock, mWeakThis),
             ::base::BindRepeating(&V4L2EncodeComponent::onInputBufferDone, mWeakThis),
             ::base::BindRepeating(&V4L2EncodeComponent::onOutputBufferDone, mWeakThis),
