@@ -37,6 +37,7 @@ public:
     static uint32_t getOutputDelay(VideoCodec codec);
 
     size_t getInputBufferSize() const;
+    std::shared_ptr<C2StreamColorAspectsInfo::output>& getColorAspects();
     c2_status_t queryColorAspects(
             std::shared_ptr<C2StreamColorAspectsInfo::output>* targetColorAspects);
 
@@ -59,6 +60,11 @@ private:
                                         C2P<C2StreamColorAspectsInfo::output>& merged,
                                         const C2P<C2StreamColorAspectsTuning::output>& def,
                                         const C2P<C2StreamColorAspectsInfo::input>& coded);
+
+    static C2R ColorAspectsSetter(bool mayBlock,
+                                  C2P<C2StreamColorAspectsInfo::output> &me,
+                                  const C2P<C2StreamColorAspectsTuning::output> &def,
+                                  const C2P<C2StreamColorAspectsInfo::input> &coded);
 
     // The kind of the component; should be C2Component::KIND_DECODER.
     std::shared_ptr<C2ComponentKindSetting> mKind;

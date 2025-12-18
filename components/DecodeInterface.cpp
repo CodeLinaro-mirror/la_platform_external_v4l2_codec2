@@ -101,6 +101,26 @@ C2R DecodeInterface::MergedColorAspectsSetter(bool /* mayBlock */,
 }
 
 // static
+// Imported from: frameworks/av/media/codec2/components/avc/C2SoftAvcDec.cpp
+C2R DecodeInterface::ColorAspectsSetter(
+        bool mayBlock, C2P<C2StreamColorAspectsInfo::output> &me,
+        const C2P<C2StreamColorAspectsTuning::output> &def,
+        const C2P<C2StreamColorAspectsInfo::input> &coded) {
+    (void)mayBlock;
+
+    // take default values for all unspecified fields, and coded values for specified ones
+    me.set().range = coded.v.range == RANGE_UNSPECIFIED ? def.v.range : coded.v.range;
+    me.set().primaries = coded.v.primaries == PRIMARIES_UNSPECIFIED
+        ? def.v.primaries : coded.v.primaries;
+    me.set().transfer = coded.v.transfer == TRANSFER_UNSPECIFIED
+        ? def.v.transfer : coded.v.transfer;
+    me.set().matrix = coded.v.matrix == MATRIX_UNSPECIFIED ? def.v.matrix : coded.v.matrix;
+
+    return C2R::Ok();
+}
+
+
+// static
 C2R DecodeInterface::MaxInputBufferSizeCalculator(
         bool /* mayBlock */, C2P<C2StreamMaxBufferSizeInfo::input>& me,
         const C2P<C2StreamPictureSizeInfo::output>& size) {
@@ -386,6 +406,27 @@ DecodeInterface::DecodeInterface(const std::string& name,
                     .withSetter(DefaultColorAspectsSetter)
                     .build());
 
+    addParameter(
+            DefineParam(mColorAspects, C2_PARAMKEY_COLOR_ASPECTS)
+                    .withDefault(new C2StreamColorAspectsInfo::output(
+                            0u, C2Color::RANGE_UNSPECIFIED, C2Color::PRIMARIES_UNSPECIFIED,
+                            C2Color::TRANSFER_UNSPECIFIED, C2Color::MATRIX_UNSPECIFIED))
+                    .withFields(
+                           {C2F(mColorAspects, range)
+                                     .inRange(C2Color::RANGE_UNSPECIFIED,
+                                              C2Color::RANGE_OTHER),
+                            C2F(mColorAspects, primaries)
+                                     .inRange(C2Color::PRIMARIES_UNSPECIFIED,
+                                              C2Color::PRIMARIES_OTHER),
+                            C2F(mColorAspects, transfer)
+                                     .inRange(C2Color::TRANSFER_UNSPECIFIED,
+                                              C2Color::TRANSFER_OTHER),
+                            C2F(mColorAspects, matrix)
+                                     .inRange(C2Color::MATRIX_UNSPECIFIED,
+                                              C2Color::MATRIX_OTHER)})
+                    .withSetter(ColorAspectsSetter, mDefaultColorAspects, mCodedColorAspects)
+                    .build());
+
     // At this moment v4l2_codec2 support decoding this information only for
     // unprotected H264 and both protected and unprotected HEVC.
     if ((mVideoCodec == VideoCodec::H264 && !secureMode) || mVideoCodec == VideoCodec::HEVC) {
@@ -427,6 +468,10 @@ DecodeInterface::DecodeInterface(const std::string& name,
 
 size_t DecodeInterface::getInputBufferSize() const {
     return mMaxInputSize->value;
+}
+
+std::shared_ptr<C2StreamColorAspectsInfo::output>& DecodeInterface::getColorAspects() {
+        return mColorAspects;
 }
 
 c2_status_t DecodeInterface::queryColorAspects(
