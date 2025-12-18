@@ -65,6 +65,33 @@ bool waitForDRC(const C2ConstLinearBlock& input, std::optional<VideoCodec> codec
     return false;
 }
 
+uint32_t HalPixelFormatToV4L2PixFmt(HalPixelFormat pixelFormat) {
+    switch (pixelFormat) {
+    case HalPixelFormat::YCBCR_420_888:
+    case HalPixelFormat::NV12:
+        return V4L2_PIX_FMT_NV12;
+    case HalPixelFormat::YV12:
+        return V4L2_PIX_FMT_YVU420;
+    case HalPixelFormat::RGBX_8888:
+        return V4L2_PIX_FMT_RGB32;
+    default:
+        return 0;
+    }
+}
+
+HalPixelFormat V4L2PixFmtToHalPixelFormat(uint32_t pixelFormat) {
+    switch (pixelFormat) {
+    case V4L2_PIX_FMT_NV12:
+        return HalPixelFormat::YCBCR_420_888;
+    case V4L2_PIX_FMT_YVU420:
+        return HalPixelFormat::YV12;
+    case V4L2_PIX_FMT_RGB32:
+        return HalPixelFormat::RGBX_8888;
+    default:
+        return HalPixelFormat::UNKNOWN;
+    }
+}
+
 }  // namespace
 
 // static
@@ -247,7 +274,7 @@ bool V4L2Decoder::setupInitialOutput() {
 
     mInitialEosBuffer =
             new GraphicBuffer(mCodedSize.getWidth(), mCodedSize.getHeight(),
-                              static_cast<PixelFormat>(HalPixelFormat::YCBCR_420_888),
+                              static_cast<PixelFormat>(mOutputPixelFormat),
                               GraphicBuffer::USAGE_HW_VIDEO_ENCODER, "V4L2DecodeComponent");
 
     if (mInitialEosBuffer->initCheck() != NO_ERROR) {
@@ -763,9 +790,16 @@ bool V4L2Decoder::changeResolution() {
     // Release the previous VideoFramePool before getting a new one to guarantee only one pool
     // exists at the same time.
     mVideoFramePool.reset();
-    // Always use flexible pixel 420 format YCBCR_420_888 in Android.
-    mVideoFramePool = mGetPoolCb.Run(mCodedSize, HalPixelFormat::YCBCR_420_888,
-                                     mOutputQueue->allocatedBuffersCount());
+
+    const std::optional<struct v4l2_format> adjustedFormat = getFormatInfo();
+    if (!adjustedFormat) {
+        ALOGE("Failed to get format info");
+        return false;
+    }
+    
+    mVideoFramePool = 
+        mGetPoolCb.Run(mCodedSize, V4L2PixFmtToHalPixelFormat(adjustedFormat->fmt.pix_mp.pixelformat), mOutputQueue->allocatedBuffersCount());
+
     if (!mVideoFramePool) {
         ALOGE("Failed to get block pool with size: %s", toString(mCodedSize).c_str());
         return false;
@@ -776,16 +810,33 @@ bool V4L2Decoder::changeResolution() {
 }
 
 bool V4L2Decoder::setupOutputFormat(const ui::Size& size) {
+    uint32_t expectedOutputFormatPixel = HalPixelFormatToV4L2PixFmt(mOutputPixelFormat);
+    uint32_t outputFormatPixel = 0;
     for (const uint32_t& pixfmt :
-         mDevice->enumerateSupportedPixelformats(V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)) {
+        mDevice->enumerateSupportedPixelformats(V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE)) {
         if (std::find(kSupportedOutputFourccs.begin(), kSupportedOutputFourccs.end(), pixfmt) ==
             kSupportedOutputFourccs.end()) {
             ALOGD("Pixel format %s is not supported, skipping...", fourccToString(pixfmt).c_str());
             continue;
         }
+        if (!outputFormatPixel) {
+            outputFormatPixel = pixfmt;
+        }
+        
+        if (expectedOutputFormatPixel == pixfmt) {
+            outputFormatPixel = pixfmt;
+            ALOGD("Expected pixel format %s is supported", fourccToString(pixfmt).c_str());
+            break;
+        }
+    }
 
-        if (mOutputQueue->setFormat(pixfmt, size, 0) != std::nullopt) {
+    if (outputFormatPixel) {
+        if (mOutputQueue->setFormat(outputFormatPixel, size, 0) != std::nullopt) {
             return true;
+        }
+        else {
+            ALOGE("Failed to set output format");
+            return false;
         }
     }
 
