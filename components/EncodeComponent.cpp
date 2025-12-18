@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define ATRACE_TAG ATRACE_TAG_VIDEO
 #define LOG_TAG "EncodeComponent"
@@ -128,6 +132,13 @@ std::optional<std::vector<VideoFramePlane>> getVideoFrameLayout(const C2ConstGra
         strides[C2PlanarLayout::PLANE_R] =
                 static_cast<uint32_t>(layout.planes[C2PlanarLayout::PLANE_R].rowInc);
         *format = VideoPixelFormat::ARGB;
+        break;
+    }
+    case C2PlanarLayout::TYPE_RGBA: {
+        offsets[C2PlanarLayout::PLANE_R] = layout.planes[C2PlanarLayout::PLANE_R].offset;
+        strides[C2PlanarLayout::PLANE_R] =
+                static_cast<uint32_t>(layout.planes[C2PlanarLayout::PLANE_R].rowInc);
+        *format = VideoPixelFormat::RGBA;
         break;
     }
     default:
