@@ -464,6 +464,13 @@ DecodeInterface::DecodeInterface(const std::string& name,
                 .withFields({C2F(mPixelFormat, value).oneOf(pixelFormats)})
                 .withSetter((Setter<decltype(*mPixelFormat)>::StrictValueWithNoDeps))
                 .build());
+    
+    addParameter(
+            DefineParam(mLowLatencyMode, C2_PARAMKEY_LOW_LATENCY_MODE)
+                    .withDefault(new C2GlobalLowLatencyModeTuning(0))
+                    .withFields({C2F(mLowLatencyMode, value).oneOf({0,1})})
+                    .withSetter(Setter<decltype(*mLowLatencyMode)>::StrictValueWithNoDeps)
+                    .build());
 }
 
 size_t DecodeInterface::getInputBufferSize() const {
@@ -510,6 +517,10 @@ uint32_t DecodeInterface::getOutputDelay(VideoCodec codec) {
         // Reference: https://www.webmproject.org/vp9/levels/
         return 8;
     }
+}
+
+bool DecodeInterface::getLowLatencyMode() {
+   return mLowLatencyMode->value;
 }
 
 }  // namespace android

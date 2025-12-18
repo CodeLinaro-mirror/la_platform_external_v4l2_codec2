@@ -44,6 +44,8 @@ public:
     // Get the current value of output pixel format requested by client.
    HalPixelFormat getOutputPixelFormat() const { return static_cast<HalPixelFormat> (mPixelFormat->value); }
 
+   bool getLowLatencyMode();
+
 private:
     // Configurable parameter setters.
     static C2R ProfileLevelSetter(bool mayBlock, C2P<C2StreamProfileLevelInfo::input>& info);
@@ -114,6 +116,8 @@ private:
     std::shared_ptr<C2StreamColorAspectsInfo::output> mColorAspects;
     // The default requested output pixel format. This parameter should be configured by client.
     std::shared_ptr<C2StreamPixelFormatInfo::output> mPixelFormat;
+    // Low-latency mode flag.
+    std::shared_ptr<C2GlobalLowLatencyModeTuning> mLowLatencyMode;
 
     c2_status_t mInitStatus;
     std::optional<VideoCodec> mVideoCodec;

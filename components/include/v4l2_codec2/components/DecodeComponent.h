@@ -173,6 +173,9 @@ protected:
     // The record of frame index to update color aspects. Details as above.
     uint64_t mPendingColorAspectsChangeFrameIndex;
 
+    // Set to true when low-latency mode is required.
+    bool mLowLatencyMode = false;
+
     // The device task runner and its sequence checker. We should interact with
     // |mDevice| on this.
     ::base::Thread mDecoderThread{"DecodeComponentDecoderThread"};
