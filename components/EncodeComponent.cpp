@@ -957,7 +957,7 @@ C2Work* EncodeComponent::getWorkByTimestamp(int64_t timestamp) {
     // items that are marked as EOS, as their timestamp might clash with other work items.
     auto it = std::find_if(
             mWorkQueue.begin(), mWorkQueue.end(), [timestamp](const std::unique_ptr<C2Work>& w) {
-                return !(w->input.flags & C2FrameData::FLAG_END_OF_STREAM) &&
+                return !(w->input.flags & C2FrameData::FLAG_END_OF_STREAM && w->input.buffers.empty()) &&
                        w->input.ordinal.timestamp.peeku() == static_cast<uint64_t>(timestamp);
             });
     if (it == mWorkQueue.end()) {
