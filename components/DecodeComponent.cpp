@@ -606,8 +606,7 @@ void DecodeComponent::onDecodeDone(int64_t bitstreamId, VideoDecoder::DecodeStat
     switch (status) {
     case VideoDecoder::DecodeStatus::kAborted:
         work->input.buffers.front().reset();
-        work->worklets.front()->output.flags = static_cast<C2FrameData::flags_t>(
-                work->worklets.front()->output.flags & C2FrameData::FLAG_DROP_FRAME);
+        work->worklets.front()->output.flags = C2FrameData::FLAG_DROP_FRAME;
         mOutputBitstreamIds.push(bitstreamId);
 
         pumpReportWork();
