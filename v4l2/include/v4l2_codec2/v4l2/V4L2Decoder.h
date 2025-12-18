@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_V4L2_V4L2_DECODER_H
 #define ANDROID_V4L2_CODEC2_V4L2_V4L2_DECODER_H
 
@@ -28,11 +32,14 @@
 
 namespace android {
 
-// Currently we only support flexible pixel 420 format YCBCR_420_888 in Android.
-// Here is the list of flexible 420 format.
+/* For compatiblity with older Kernel versions, declare support for RGBX 32 bit format as RGB4.
+ * With Kernel versions prior to 5.2 it corresponds to the deprecated V4L2_PIX_FMT_RGB32 / RGB4
+ * fourcc format. Starting from Kernel version 5.2 it's replaced with V4L2_PIX_FMT_RGBX32 / XB24
+ * fourcc format. This behavior is aligned with virtio-video v4l2 driver.*/
 constexpr std::initializer_list<uint32_t> kSupportedOutputFourccs = {
         Fourcc::YU12, Fourcc::YV12, Fourcc::YM12, Fourcc::YM21,
         Fourcc::NV12, Fourcc::NV21, Fourcc::NM12, Fourcc::NM21,
+        Fourcc::RGB4,
 };
 
 class V4L2Decoder : public VideoDecoder {
