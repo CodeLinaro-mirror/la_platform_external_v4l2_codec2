@@ -9,6 +9,8 @@
 //#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2DecodeComponent"
 
+#include <v4l2_codec2/common/H264NalParser.h>
+#include <v4l2_codec2/common/HEVCNalParser.h>
 #include <v4l2_codec2/v4l2/V4L2DecodeComponent.h>
 #include <v4l2_codec2/v4l2/V4L2Decoder.h>
 
@@ -106,6 +108,18 @@ void V4L2DecodeComponent::startTask(c2_status_t* status, ::base::WaitableEvent* 
     if ((!mIsSecure && *codec == VideoCodec::H264) || *codec  == VideoCodec::HEVC) {
         if (mIntfImpl->queryColorAspects(&mCurrentColorAspects) != C2_OK) return;
         mPendingColorAspectsChange = false;
+
+        // Initialized common NALs parser.
+        if (*codec == VideoCodec::H264) {
+            mNalParser = std::make_unique<H264NalParser>();
+        } else {
+            mNalParser = std::make_unique<HEVCNalParser>();
+        }
+
+        if (!mNalParser) {
+            ALOGE("Failed to create NAL parser for %s", VideoCodecToString(*codec));
+            return;
+        }
     }
 
     // ::base::Unretained(this) is safe here because |mDecoder| is always destroyed before

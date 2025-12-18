@@ -21,6 +21,7 @@
 #include <base/synchronization/waitable_event.h>
 #include <base/threading/thread.h>
 
+#include <v4l2_codec2/common/NalParser.h>
 #include <v4l2_codec2/components/DecodeInterface.h>
 #include <v4l2_codec2/components/VideoDecoder.h>
 #include <v4l2_codec2/components/VideoFramePool.h>
@@ -69,6 +70,16 @@ protected:
     // Try to process pending works at |mPendingWorks|. Paused when |mIsDraining| is set.
     void pumpPendingWorks();
 
+    // Try to find coded color aspects in SPS NAL. 
+    // Return false if SPS is not valid or color description does not exist.
+    // If we find color aspects settings convert them to ColorUtils::ColorAspects
+    // and return true. 
+    bool getCodedColorAspectsFromBitstream(C2StreamColorAspectsInfo::input* codedAspects);
+    
+    // Try to get coded color aspects from bitstream.
+    // If new settings found trigger color aspects change. 
+    void checkCodedColorAspects(const C2Work* work);
+
     void processCSDWork(const int64_t bitstreamId, const C2Work* work);
     void processWork(const int64_t bitstreamId, const C2Work* work);
     void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock);
@@ -109,6 +120,10 @@ protected:
     std::unique_ptr<VideoDecoder> mDecoder;
     // The queue of works that haven't processed and sent to |mDecoder|.
     std::queue<std::unique_ptr<C2Work>> mPendingWorks;
+
+    // The common NALs parser.
+    std::unique_ptr<NalParser> mNalParser;
+
     // The works whose input buffers are sent to |mDecoder|. The key is the
     // bitstream ID of work's input buffer.
     std::map<int64_t, std::unique_ptr<C2Work>> mWorksAtDecoder;
