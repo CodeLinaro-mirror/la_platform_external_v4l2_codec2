@@ -46,8 +46,9 @@ class V4L2Decoder : public VideoDecoder {
 public:
     static std::unique_ptr<VideoDecoder> Create(
             uint32_t debugStreamId, const VideoCodec& codec, const size_t inputBufferSize,
-            const size_t minNumOutputBuffers, GetPoolCB getPoolCB, OutputCB outputCb,
-            ErrorCB errorCb, scoped_refptr<::base::SequencedTaskRunner> taskRunner, bool isSecure);
+            const size_t minNumOutputBuffers, const HalPixelFormat outputPixelFormat,
+            GetPoolCB getPoolCB, OutputCB outputCb, ErrorCB errorCb, 
+            scoped_refptr<::base::SequencedTaskRunner> taskRunner, bool isSecure);
     ~V4L2Decoder() override;
 
     void decode(std::unique_ptr<ConstBitstreamBuffer> buffer, DecodeCB decodeCb) override;
@@ -77,8 +78,8 @@ private:
 
     V4L2Decoder(uint32_t debugStreamId, scoped_refptr<::base::SequencedTaskRunner> taskRunner);
     bool start(const VideoCodec& codec, const size_t inputBufferSize,
-               const size_t minNumOutputBuffers, GetPoolCB getPoolCb, OutputCB outputCb,
-               ErrorCB errorCb, bool isSecure);
+               const size_t minNumOutputBuffers, const HalPixelFormat outputPixelFormat,
+               GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb, bool isSecure);
     bool setupInputFormat(const uint32_t inputPixelFormat, const size_t inputBufferSize);
 
     // Sets minimal resolution and allocates minimal amount of output buffers for
@@ -144,6 +145,8 @@ private:
 
     ui::Size mCodedSize;
     Rect mVisibleRect;
+
+    HalPixelFormat mOutputPixelFormat;
 
     // Currently enqueued frame at the deocder device, mapped using V4L2 buffer ID.
     std::map<size_t, std::unique_ptr<VideoFrame>> mFrameAtDevice;
