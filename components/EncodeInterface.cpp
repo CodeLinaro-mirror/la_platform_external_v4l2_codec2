@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2EncodeInterface"
 
@@ -161,6 +165,16 @@ C2R EncodeInterface::VP9ProfileLevelSetter(bool /*mayBlock*/,
 C2R EncodeInterface::SizeSetter(bool mayBlock, C2P<C2StreamPictureSizeInfo::input>& videoSize) {
     (void)mayBlock;
     // TODO: maybe apply block limit?
+    // The input video dimension should always be even. 
+    // This guarantees that it is on a subsampling boundary (2x2) for different formats.
+    if (videoSize.v.width & 1) {
+        ALOGE("Wrong picture width (%d). Value should be even.", videoSize.v.width);
+        return C2R(C2SettingResultBuilder::BadValue(videoSize.F(videoSize.v.width)));
+    }
+    if (videoSize.v.height & 1) {
+        ALOGE("Wrong picture height (%d). Values should be even.", videoSize.v.height);
+        return C2R(C2SettingResultBuilder::BadValue(videoSize.F(videoSize.v.height)));
+    }
     return videoSize.F(videoSize.v.width)
             .validatePossible(videoSize.v.width)
             .plus(videoSize.F(videoSize.v.height).validatePossible(videoSize.v.height));
