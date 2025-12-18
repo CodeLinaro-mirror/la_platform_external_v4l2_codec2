@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "NalParser"
 
@@ -190,12 +194,104 @@ bool skipStRefPicSet(ABitReader* br, uint32_t stRpsIdx, uint32_t numShortTermRef
 
 }  // namespace
 
+HEVCNalParser::HEVCNalParser() : NalParser() {}
 HEVCNalParser::HEVCNalParser(const uint8_t* data, size_t length) : NalParser(data, length) {}
+
+// H265 NALs unit parser to AU-alignment check.
+// Implementation is similar to GStreamer H265 parser and use the same conditions to
+// complete Access Unit.
+// NOTE this is not entirely according to Access Unit specs Figure 7-1,
+// but in practice it works in common cases.
+bool HEVCNalParser::parse() {
+    reset();
+
+    // Check if NAL is VCL (coded slice) unit.
+    auto isVcl = [](uint8_t t) {
+        return (t >= NalUnitType::HEVC_NAL_SLICE_TRAIL_N &&
+               t <= NalUnitType::HEVC_NAL_SLICE_RASL_R) ||
+               (t >= NalUnitType::HEVC_NAL_SLICE_BLA_W_LP &&
+               t <= NalUnitType::HEVC_IRAP_NAL_TYPE_MAX);
+    };
+
+    // Check if NAL is specific non-VCL (coded slice) unit, e.g. VPS, PPS, SPS, SEI.
+    auto isNonVcl = [](uint8_t t) {
+        return (t >= NalUnitType::HEVC_NAL_VPS &&
+               t <= NalUnitType::HEVC_NAL_PPS) ||
+               (t == NalUnitType::HEVC_NAL_PREFIX_SEI);
+    };
+
+    // Check if first_slice_segment_in_pic_flag == 1
+    // first_slice_segment_in_pic_flag is 1-bit flag in the slice segment header 
+    // that indicates whether the current slice segment is the first in the picture.
+    auto isNewFrame = [this]() {
+        // Skip NAL header.
+        NALBitReader br(this->mCurrNalDataPos + 2, length() - 2);
+
+        uint32_t first_slice_flag = 0;
+        if (!br.getBitsGraceful(1, &first_slice_flag)) { // first_slice_segment_in_pic_flag
+            return false;
+        }
+        if (first_slice_flag == 1) {
+            return true;
+        }
+
+        return false;
+    };
+
+    uint8_t nalType = 0;
+    AccessUnit* au = getAccessUnitSlot();
+
+    while (locateNextNal()) {
+        nalType = type();
+        // AUD found - complete current AU if it is not empty.
+        if (nalType == NalUnitType::HEVC_NAL_AUD) {
+            if (!au->nals.empty()) {
+                au->completed = true;
+                au = getAccessUnitSlot();
+            }
+        }
+
+        // Found specific non-VCL unit - complete AU if VCL is already in AU.
+        if (isNonVcl(nalType)) {
+            if (au->vclFound) {
+                // Specific non-VCL found → marks start of next AU
+                au->completed = true;
+                au = getAccessUnitSlot();
+            }
+        }
+
+        // Found VCL unit - mark vclFound if it is first VCL in AU.
+        // Complete AU if it is next VCL unit.
+        if (isVcl(nalType)) {
+            if (au->vclFound && isNewFrame()) {
+                // Next VCL found → marks start of next AU
+                au->completed = true;
+                au = getAccessUnitSlot();
+            }
+            au->vclFound = true;
+        }
+
+        au->nals.push_back(nalType);
+    }
+
+    // Return true if AU completed.
+    return mAccessUnits.size() > 1;
+}
 
 bool HEVCNalParser::locateSPS() {
     while (locateNextNal()) {
         if (length() == 0) continue;
-        if (type() != kSPSType) continue;
+        if (type() != NalUnitType::HEVC_NAL_SPS) continue;
+        return true;
+    }
+
+    return false;
+}
+
+bool HEVCNalParser::locatePPS() {
+    while (locateNextNal()) {
+        if (length() == 0) continue;
+        if (type() != NalUnitType::HEVC_NAL_PPS) continue;
         return true;
     }
 
@@ -205,7 +301,7 @@ bool HEVCNalParser::locateSPS() {
 bool HEVCNalParser::locateIDR() {
     while (locateNextNal()) {
         if (length() == 0) continue;
-        if (type() != kIDRType) continue;
+        if (type() >= NalUnitType::HEVC_NAL_SLICE_IDR_W_RADL && type() <= NalUnitType::HEVC_NAL_SLICE_CRA_NUT) continue;
         return true;
     }
 
@@ -220,7 +316,11 @@ uint8_t HEVCNalParser::type() const {
 
 bool HEVCNalParser::findCodedColorAspects(ColorAspects* colorAspects) {
     ALOG_ASSERT(colorAspects);
-    ALOG_ASSERT(type() == kSPSType);
+
+    reset();
+    if (!locateSPS()) {
+        return false;
+    }
 
     // Unfortunately we can't directly jump to the Video Usability Information (VUI) parameters that
     // contain the color aspects. We need to parse the entire SPS header up until the values we
