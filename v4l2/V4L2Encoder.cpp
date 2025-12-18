@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2Encoder"
 
@@ -14,6 +18,7 @@
 #include <base/bind.h>
 #include <base/files/scoped_file.h>
 #include <base/memory/ptr_util.h>
+#include <cutils/properties.h>
 #include <log/log.h>
 #include <ui/Rect.h>
 
@@ -803,8 +808,18 @@ bool V4L2Encoder::enqueueInputBuffer(std::unique_ptr<InputFrame> frame) {
         fds.resize(1);
     }
 
-    if (!std::move(*buffer).queueDMABuf(fds)) {
-        ALOGE("Failed to queue input buffer using QueueDMABuf");
+    bool result;
+    std::string queueMemType;
+    if (buffer->memory() == V4L2_MEMORY_MMAP) {
+        result = std::move(*buffer).queueMMap();
+        queueMemType = "QueueMMap";
+    } else {
+        result = std::move(*buffer).queueDMABuf(fds);
+        queueMemType = "QueueDMABuf";
+    }
+
+    if (!result) {
+        ALOGE("Failed to queue input buffer using %s", queueMemType.c_str());
         onError();
         return false;
     }
@@ -1013,7 +1028,14 @@ bool V4L2Encoder::createInputBuffers() {
 
     // No memory is allocated here, we just generate a list of buffers on the input queue, which
     // will hold memory handles to the real buffers.
-    if (mInputQueue->allocateBuffers(kInputBufferCount, V4L2_MEMORY_DMABUF) < kInputBufferCount) {
+    v4l2_memory memtype;
+    if (property_get_bool("ro.vendor.v4l2_codec2.encoder.use_dmabuf_inputqueue", true)) {
+        memtype = V4L2_MEMORY_DMABUF;
+    } else {
+        memtype = V4L2_MEMORY_MMAP;
+    }
+
+    if (mInputQueue->allocateBuffers(kInputBufferCount, memtype) < kInputBufferCount) {
         ALOGE("Failed to create V4L2 input buffers.");
         return false;
     }
