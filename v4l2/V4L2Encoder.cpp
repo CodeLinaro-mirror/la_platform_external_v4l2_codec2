@@ -626,6 +626,7 @@ bool V4L2Encoder::configureH264(C2Config::profile_t outputProfile,
     // When encoding H.264 we want to prepend SPS and PPS to each IDR for resilience. Some
     // devices support this through the V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR control.
     // Otherwise we have to cache the latest SPS and PPS and inject these manually.
+    #ifdef V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR_IMPLEMENTED
     if (mDevice->isCtrlExposed(V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR)) {
         if (!mDevice->setExtCtrls(V4L2_CTRL_CLASS_MPEG,
                                   {V4L2ExtCtrl(V4L2_CID_MPEG_VIDEO_PREPEND_SPSPPS_TO_IDR, 1)})) {
@@ -638,6 +639,9 @@ bool V4L2Encoder::configureH264(C2Config::profile_t outputProfile,
         mInjectParamsBeforeIDR = true;
         ALOGV("Device doesn't support prepending SPS and PPS to IDR, injecting manually.");
     }
+    #else
+        mInjectParamsBeforeIDR = false;
+    #endif
 
     // Set the H.264 profile.
     const int32_t profile = V4L2Device::c2ProfileToV4L2H264Profile(outputProfile);
