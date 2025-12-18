@@ -49,10 +49,6 @@ int64_t timestampToBitstreamId(c2_cntr64_t timestamp, c2_cntr64_t frameIndex) {
 }
 
 bool isWorkDone(const C2Work& work, int64_t bitstreamId) {
-    // Exception: EOS work should be processed by reportEOSWork().
-    // Always return false here no matter the work is actually done.
-    if (work.input.flags & C2FrameData::FLAG_END_OF_STREAM) return false;
-
     // Work is done when all conditions meet:
     // 1. mDecoder has released the work's input buffer.
     // 2. mDecoder has returned the work's output buffer in normal case,
@@ -342,8 +338,8 @@ void DecodeComponent::pumpPendingWorks() {
         const bool isEmptyWork = pendingWork->input.buffers.front() == nullptr;
         const bool isEOSWork = pendingWork->input.flags & C2FrameData::FLAG_END_OF_STREAM;
         const C2Work* work = pendingWork.get();
-        ALOGV("Process C2Work bitstreamId=%ld isCSDWork=%d, isEmptyWork=%d", bitstreamId, isCSDWork,
-              isEmptyWork);
+        ALOGV("Process C2Work bitstreamId=%ld isCSDWork=%d, isEmptyWork=%d, isEOSWork=%d", bitstreamId, isCSDWork,
+              isEmptyWork, isEOSWork);
 
         auto res = mWorksAtDecoder.insert(std::make_pair(bitstreamId, std::move(pendingWork)));
         ALOGW_IF(!res.second, "We already inserted bitstreamId %ld to decoder?", bitstreamId);
@@ -355,8 +351,8 @@ void DecodeComponent::pumpPendingWorks() {
             mIsDraining = true;
         }
 
-        // Directly report the empty CSD and non-EOS work as finished.
-        if (isEmptyWork && !isEOSWork) {
+        // Directly report the empty work as finished.
+        if (isEmptyWork) {
             work->worklets.front()->output.flags = C2FrameData::FLAG_DROP_FRAME;
             reportWorkIfFinished(bitstreamId);
             return;
@@ -752,14 +748,8 @@ bool DecodeComponent::reportEOSWork() {
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
 
-    const auto it =
-            std::find_if(mWorksAtDecoder.begin(), mWorksAtDecoder.end(), [](const auto& kv) {
-                return kv.second->input.flags & C2FrameData::FLAG_END_OF_STREAM;
-            });
-    if (it == mWorksAtDecoder.end()) {
-        ALOGE("Failed to find EOS work.");
-        return false;
-    }
+    ALOG_ASSERT(mWorksAtDecoder.size() == 1u);
+    auto it = mWorksAtDecoder.begin();
 
     std::unique_ptr<C2Work> eosWork(std::move(it->second));
     mWorksAtDecoder.erase(it);
@@ -768,16 +758,6 @@ bool DecodeComponent::reportEOSWork() {
     eosWork->workletsProcessed = static_cast<uint32_t>(eosWork->worklets.size());
     eosWork->worklets.front()->output.flags = C2FrameData::FLAG_END_OF_STREAM;
     if (!eosWork->input.buffers.empty()) eosWork->input.buffers.front().reset();
-
-    if (!mWorksAtDecoder.empty()) {
-        ALOGW("There are remaining works except EOS work. abandon them.");
-        for (const auto& kv : mWorksAtDecoder) {
-            ALOGW("bitstreamId(%ld) => Work index=%llu, timestamp=%llu", kv.first,
-                  kv.second->input.ordinal.frameIndex.peekull(),
-                  kv.second->input.ordinal.timestamp.peekull());
-        }
-        reportAbandonedWorks();
-    }
 
     return reportWork(std::move(eosWork));
 }
