@@ -529,6 +529,11 @@ void DecodeComponent::onOutputFrameReady(std::unique_ptr<VideoFrame> frame) {
     }
     C2Work* work = it->second.get();
 
+    // Sync graphic buffer by calling mapping function that triggers TRANSFER_TO_HOST command in coqos-virtio-gpu.
+    // It copies contents from the front to backing buffer inside virglrenderer.
+    // This ensures that updates in the buffer are handled by coqos-virtio-gpu.
+    frame->sync();
+
     C2ConstGraphicBlock constBlock = std::move(frame)->getGraphicBlock();
     std::shared_ptr<C2Buffer> buffer = C2Buffer::CreateGraphicBuffer(std::move(constBlock));
     if (mPendingColorAspectsChange &&

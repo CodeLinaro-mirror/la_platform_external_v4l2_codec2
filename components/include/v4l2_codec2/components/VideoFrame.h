@@ -42,6 +42,9 @@ public:
     // Get read-write C2GraphicView.
     C2GraphicView getGraphicView();
 
+    // Invocate writable map() to trigger TRANSFER_TO_HOST command.
+    void sync();
+
 private:
     VideoFrame(std::shared_ptr<C2GraphicBlock> block, std::vector<int> fds);
 
