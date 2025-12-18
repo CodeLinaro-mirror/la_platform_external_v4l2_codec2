@@ -62,4 +62,8 @@ C2GraphicView VideoFrame::getGraphicView() {
     return mGraphicBlock->map().get();
 }
 
+void VideoFrame::sync() {
+    mGraphicBlock->map();
+}
+
 }  // namespace android
