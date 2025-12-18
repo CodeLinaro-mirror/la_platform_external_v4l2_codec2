@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "VideoFrame"
 
@@ -42,11 +46,11 @@ const Rect& VideoFrame::getVisibleRect() const {
     return mVisibleRect;
 }
 
-void VideoFrame::setBitstreamId(int32_t bitstreamId) {
+void VideoFrame::setBitstreamId(int64_t bitstreamId) {
     mBitstreamId = bitstreamId;
 }
 
-int32_t VideoFrame::getBitstreamId() const {
+int64_t VideoFrame::getBitstreamId() const {
     return mBitstreamId;
 }
 

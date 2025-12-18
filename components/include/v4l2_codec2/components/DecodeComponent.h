@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_COMPONENTS_DECODE_COMPONENT_H
 #define ANDROID_V4L2_CODEC2_COMPONENTS_DECODE_COMPONENT_H
 
@@ -65,9 +69,9 @@ protected:
     // Try to process pending works at |mPendingWorks|. Paused when |mIsDraining| is set.
     void pumpPendingWorks();
 
-    void processCSDWork(const int32_t bitstreamId, const C2Work* work);
-    void processWork(const int32_t bitstreamId, const C2Work* work);
-    void processWorkBuffer(const int32_t bitstreamId, const C2ConstLinearBlock& linearBlock);
+    void processCSDWork(const int64_t bitstreamId, const C2Work* work);
+    void processWork(const int64_t bitstreamId, const C2Work* work);
+    void processWorkBuffer(const int64_t bitstreamId, const C2ConstLinearBlock& linearBlock);
 
     // Get the buffer pool.
     std::unique_ptr<VideoFramePool> getVideoFramePool(const ui::Size& size,
@@ -78,14 +82,14 @@ protected:
 
     // Finish callbacks of each method.
     void onOutputFrameReady(std::unique_ptr<VideoFrame> frame);
-    void onDecodeDone(int32_t bitstreamId, VideoDecoder::DecodeStatus status);
+    void onDecodeDone(int64_t bitstreamId, VideoDecoder::DecodeStatus status);
     void onDrainDone(VideoDecoder::DecodeStatus status);
     void onFlushDone();
 
     // Try to process decoding works at |mPendingWorks|.
     void pumpReportWork();
     // Report finished work.
-    bool reportWorkIfFinished(int32_t bitstreamId);
+    bool reportWorkIfFinished(int64_t bitstreamId);
     bool reportEOSWork();
     void reportAbandonedWorks();
     bool reportWork(std::unique_ptr<C2Work> work);
@@ -107,10 +111,10 @@ protected:
     std::queue<std::unique_ptr<C2Work>> mPendingWorks;
     // The works whose input buffers are sent to |mDecoder|. The key is the
     // bitstream ID of work's input buffer.
-    std::map<int32_t, std::unique_ptr<C2Work>> mWorksAtDecoder;
+    std::map<int64_t, std::unique_ptr<C2Work>> mWorksAtDecoder;
     // The bitstream ID of the works that output frames have been returned from |mDecoder|.
     // The order is display order.
-    std::queue<int32_t> mOutputBitstreamIds;
+    std::queue<int64_t> mOutputBitstreamIds;
 
     // Set to true when decoding the protected playback.
     bool mIsSecure = false;

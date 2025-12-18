@@ -41,9 +41,11 @@
 namespace android {
 namespace {
 
-// Mask against 30 bits to avoid (undefined) wraparound on signed integer.
-int32_t timestampToBitstreamId(c2_cntr64_t timestamp, c2_cntr64_t frameIndex) {
-    return static_cast<int32_t>((timestamp.peekull() + frameIndex.peekull()) & 0x3FFFFFFF);
+// FIXME: Using timestamp here is required by some virtualized virtio-video backends in order to preserve
+// the correct order. The bitstreamid calculation relies on the naive fact that we won't exceed INT32_MAX
+// limit needed to cope with negative timestamp values. Obviously, it's not always the case.
+int64_t timestampToBitstreamId(c2_cntr64_t timestamp, c2_cntr64_t frameIndex) {
+    return static_cast<int64_t>(timestamp.peekll() + frameIndex.peekll() + INT32_MAX);
 }
 
 bool parseCodedColorAspects(const C2ConstLinearBlock& input, std::optional<VideoCodec> codec,
@@ -94,10 +96,7 @@ bool parseCodedColorAspects(const C2ConstLinearBlock& input, std::optional<Video
     return true;
 }
 
-bool isWorkDone(const C2Work& work) {
-    const int32_t bitstreamId = timestampToBitstreamId(work.input.ordinal.timestamp,
-                                                       work.input.ordinal.frameIndex);
-
+bool isWorkDone(const C2Work& work, int64_t bitstreamId) {
     // Exception: EOS work should be processed by reportEOSWork().
     // Always return false here no matter the work is actually done.
     if (work.input.flags & C2FrameData::FLAG_END_OF_STREAM) return false;
@@ -110,7 +109,7 @@ bool isWorkDone(const C2Work& work) {
     bool outputReturned = !work.worklets.front()->output.buffers.empty();
     bool ignoreOutput = (work.input.flags & C2FrameData::FLAG_CODEC_CONFIG) ||
                         (work.worklets.front()->output.flags & C2FrameData::FLAG_DROP_FRAME);
-    ALOGV("work(%d): inputReleased: %d, outputReturned: %d, ignoreOutput: %d", bitstreamId,
+    ALOGV("work(%ld): inputReleased: %d, outputReturned: %d, ignoreOutput: %d", bitstreamId,
           inputReleased, outputReturned, ignoreOutput);
     return inputReleased && (outputReturned || ignoreOutput);
 }
@@ -393,17 +392,17 @@ void DecodeComponent::pumpPendingWorks() {
         std::unique_ptr<C2Work> pendingWork(std::move(mPendingWorks.front()));
         mPendingWorks.pop();
 
-        const int32_t bitstreamId = timestampToBitstreamId(pendingWork->input.ordinal.timestamp,
+        const int64_t bitstreamId = timestampToBitstreamId(pendingWork->input.ordinal.timestamp,
                                                            pendingWork->input.ordinal.frameIndex);
         const bool isCSDWork = pendingWork->input.flags & C2FrameData::FLAG_CODEC_CONFIG;
         const bool isEmptyWork = pendingWork->input.buffers.front() == nullptr;
         const bool isEOSWork = pendingWork->input.flags & C2FrameData::FLAG_END_OF_STREAM;
         const C2Work* work = pendingWork.get();
-        ALOGV("Process C2Work bitstreamId=%d isCSDWork=%d, isEmptyWork=%d", bitstreamId, isCSDWork,
+        ALOGV("Process C2Work bitstreamId=%ld isCSDWork=%d, isEmptyWork=%d", bitstreamId, isCSDWork,
               isEmptyWork);
 
         auto res = mWorksAtDecoder.insert(std::make_pair(bitstreamId, std::move(pendingWork)));
-        ALOGW_IF(!res.second, "We already inserted bitstreamId %d to decoder?", bitstreamId);
+        ALOGW_IF(!res.second, "We already inserted bitstreamId %ld to decoder?", bitstreamId);
 
         if (!isEmptyWork) {
             if (isCSDWork) {
@@ -423,10 +422,10 @@ void DecodeComponent::pumpPendingWorks() {
     }
 }
 
-void DecodeComponent::processCSDWork(const int32_t bitstreamId, const C2Work* work) {
+void DecodeComponent::processCSDWork(const int64_t bitstreamId, const C2Work* work) {
     // If input.buffers is not empty, the buffer should have meaningful content inside.
     C2ConstLinearBlock linearBlock = work->input.buffers.front()->data().linearBlocks().front();
-    ALOG_ASSERT(linearBlock.size() > 0u, "Input buffer of work(%d) is empty.", bitstreamId);
+    ALOG_ASSERT(linearBlock.size() > 0u, "Input buffer of work(%ld) is empty.", bitstreamId);
 
     if (mIntfImpl->getVideoCodec() == VideoCodec::VP9) {
         // The VP9 decoder does not support and does not need the Codec Specific Data (CSD):
@@ -458,15 +457,15 @@ void DecodeComponent::processCSDWork(const int32_t bitstreamId, const C2Work* wo
     processWorkBuffer(bitstreamId, linearBlock);
 }
 
-void DecodeComponent::processWork(const int32_t bitstreamId, const C2Work* work) {
+void DecodeComponent::processWork(const int64_t bitstreamId, const C2Work* work) {
     // If input.buffers is not empty, the buffer should have meaningful content inside.
     C2ConstLinearBlock linearBlock = work->input.buffers.front()->data().linearBlocks().front();
-    ALOG_ASSERT(linearBlock.size() > 0u, "Input buffer of work(%d) is empty.", bitstreamId);
+    ALOG_ASSERT(linearBlock.size() > 0u, "Input buffer of work(%ld) is empty.", bitstreamId);
 
     processWorkBuffer(bitstreamId, linearBlock);
 }
 
-void DecodeComponent::processWorkBuffer(const int32_t bitstreamId,
+void DecodeComponent::processWorkBuffer(const int64_t bitstreamId,
                                         const C2ConstLinearBlock& linearBlock) {
     std::unique_ptr<ConstBitstreamBuffer> buffer = std::make_unique<ConstBitstreamBuffer>(
             bitstreamId, linearBlock, linearBlock.offset(), linearBlock.size());
@@ -478,9 +477,9 @@ void DecodeComponent::processWorkBuffer(const int32_t bitstreamId,
                      ::base::BindOnce(&DecodeComponent::onDecodeDone, mWeakThis, bitstreamId));
 }
 
-void DecodeComponent::onDecodeDone(int32_t bitstreamId, VideoDecoder::DecodeStatus status) {
+void DecodeComponent::onDecodeDone(int64_t bitstreamId, VideoDecoder::DecodeStatus status) {
     ATRACE_CALL();
-    ALOGV("%s(bitstreamId=%d, status=%s)", __func__, bitstreamId,
+    ALOGV("%s(bitstreamId=%ld, status=%s)", __func__, bitstreamId,
           VideoDecoder::DecodeStatusToString(status));
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
 
@@ -517,13 +516,13 @@ void DecodeComponent::onDecodeDone(int32_t bitstreamId, VideoDecoder::DecodeStat
 }
 
 void DecodeComponent::onOutputFrameReady(std::unique_ptr<VideoFrame> frame) {
-    ALOGV("%s(bitstreamId=%d)", __func__, frame->getBitstreamId());
+    ALOGV("%s(bitstreamId=%ld)", __func__, frame->getBitstreamId());
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
 
-    const int32_t bitstreamId = frame->getBitstreamId();
+    const int64_t bitstreamId = frame->getBitstreamId();
     auto it = mWorksAtDecoder.find(bitstreamId);
     if (it == mWorksAtDecoder.end()) {
-        ALOGE("Work with bitstreamId=%d not found, already abandoned?", bitstreamId);
+        ALOGE("Work with bitstreamId=%ld not found, already abandoned?", bitstreamId);
         reportError(C2_CORRUPTED);
         return;
     }
@@ -557,9 +556,9 @@ void DecodeComponent::detectNoShowFrameWorksAndReportIfFinished(
     ALOGV("%s()", __func__);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
 
-    std::vector<int32_t> noShowFrameBitstreamIds;
+    std::vector<int64_t> noShowFrameBitstreamIds;
     for (auto& kv : mWorksAtDecoder) {
-        const int32_t bitstreamId = kv.first;
+        const int64_t bitstreamId = kv.first;
         const C2Work* work = kv.second.get();
 
         // A work in mWorksAtDecoder would be considered to have no-show frame if there is no
@@ -579,7 +578,7 @@ void DecodeComponent::detectNoShowFrameWorksAndReportIfFinished(
     }
 
     // Try to report works with no-show frame.
-    for (const int32_t bitstreamId : noShowFrameBitstreamIds) reportWorkIfFinished(bitstreamId);
+    for (const int64_t bitstreamId : noShowFrameBitstreamIds) reportWorkIfFinished(bitstreamId);
 }
 
 void DecodeComponent::pumpReportWork() {
@@ -593,25 +592,25 @@ void DecodeComponent::pumpReportWork() {
     }
 }
 
-bool DecodeComponent::reportWorkIfFinished(int32_t bitstreamId) {
+bool DecodeComponent::reportWorkIfFinished(int64_t bitstreamId) {
     ATRACE_CALL();
-    ALOGV("%s(bitstreamId = %d)", __func__, bitstreamId);
+    ALOGV("%s(bitstreamId = %ld)", __func__, bitstreamId);
     ALOG_ASSERT(mDecoderTaskRunner->RunsTasksInCurrentSequence());
 
     // EOS work will not be reported here. reportEOSWork() does it.
     if (mIsDraining && mWorksAtDecoder.size() == 1u) {
-        ALOGV("work(bitstreamId = %d) is EOS Work.", bitstreamId);
+        ALOGV("work(bitstreamId = %ld) is EOS Work.", bitstreamId);
         return false;
     }
 
     auto it = mWorksAtDecoder.find(bitstreamId);
     if (it == mWorksAtDecoder.end()) {
-        ALOGI("work(bitstreamId = %d) is dropped, skip.", bitstreamId);
+        ALOGI("work(bitstreamId = %ld) is dropped, skip.", bitstreamId);
         return true;
     }
 
-    if (!isWorkDone(*(it->second))) {
-        ALOGV("work(bitstreamId = %d) is not done yet.", bitstreamId);
+    if (!isWorkDone(*(it->second), bitstreamId)) {
+        ALOGV("work(bitstreamId = %ld) is not done yet.", bitstreamId);
         return false;
     }
 
@@ -653,7 +652,7 @@ bool DecodeComponent::reportEOSWork() {
     if (!mWorksAtDecoder.empty()) {
         ALOGW("There are remaining works except EOS work. abandon them.");
         for (const auto& kv : mWorksAtDecoder) {
-            ALOGW("bitstreamId(%d) => Work index=%llu, timestamp=%llu", kv.first,
+            ALOGW("bitstreamId(%ld) => Work index=%llu, timestamp=%llu", kv.first,
                   kv.second->input.ordinal.frameIndex.peekull(),
                   kv.second->input.ordinal.timestamp.peekull());
         }

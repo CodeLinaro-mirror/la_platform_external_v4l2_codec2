@@ -380,7 +380,7 @@ bool V4L2Decoder::startOutputQueue(size_t minOutputBuffersCount, enum v4l2_memor
 
 void V4L2Decoder::decode(std::unique_ptr<ConstBitstreamBuffer> buffer, DecodeCB decodeCb) {
     ATRACE_CALL();
-    ALOGV("%s(id=%d)", __func__, buffer->id);
+    ALOGV("%s(id=%ld)", __func__, buffer->id);
     ALOG_ASSERT(mTaskRunner->RunsTasksInCurrentSequence());
 
     if (mState == State::Error) {
@@ -521,8 +521,8 @@ void V4L2Decoder::pumpDecodeRequest() {
         auto request = std::move(mDecodeRequests.front());
         mDecodeRequests.pop();
 
-        const int32_t bitstreamId = request.buffer->id;
-        ALOGV("QBUF to input queue, bitstreadId=%d", bitstreamId);
+        const int64_t bitstreamId = request.buffer->id;
+        ALOGV("QBUF to input queue, bitstreadId=%ld", bitstreamId);
         inputBuffer->setTimeStamp(
             {.tv_sec = static_cast<time_t>(bitstreamId / ::base::Time::kMicrosecondsPerSecond),
              .tv_usec = static_cast<time_t>(bitstreamId % ::base::Time::kMicrosecondsPerSecond)});
@@ -541,7 +541,7 @@ void V4L2Decoder::pumpDecodeRequest() {
         std::vector<int> fds;
         fds.push_back(std::move(request.buffer->dmabuf.handle()->data[0]));
         if (!std::move(*inputBuffer).queueDMABuf(fds)) {
-            ALOGE("%s(): Failed to QBUF to input queue, bitstreamId=%d", __func__, bitstreamId);
+            ALOGE("%s(): Failed to QBUF to input queue, bitstreamId=%ld", __func__, bitstreamId);
             onError();
             return;
         }
@@ -649,10 +649,10 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         inputDequeued = true;
 
         // Run the corresponding decode callback.
-        int32_t id = static_cast<int32_t>(
+        int64_t id = static_cast<int64_t>(
                 dequeuedBuffer->getTimeStamp().tv_usec +
                 dequeuedBuffer->getTimeStamp().tv_sec * ::base::Time::kMicrosecondsPerSecond);
-        ALOGV("DQBUF from input queue, bitstreamId=%d", id);
+        ALOGV("DQBUF from input queue, bitstreamId=%ld", id);
         auto it = mPendingDecodeCbs.find(id);
         if (it == mPendingDecodeCbs.end()) {
             ALOGW("Callback is already abandoned.");
@@ -677,12 +677,12 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         outputDequeued = true;
 
         const size_t bufferId = dequeuedBuffer->bufferId();
-        const int32_t bitstreamId = static_cast<int32_t>(
+        const int64_t bitstreamId = static_cast<int64_t>(
                 dequeuedBuffer->getTimeStamp().tv_usec +
                 dequeuedBuffer->getTimeStamp().tv_sec * ::base::Time::kMicrosecondsPerSecond);
         const size_t bytesUsed = dequeuedBuffer->getPlaneBytesUsed(0);
         const bool isLast = dequeuedBuffer->isLast();
-        ALOGV("DQBUF from output queue, bufferId=%zu, bitstreamId=%d, bytesused=%zu, isLast=%d",
+        ALOGV("DQBUF from output queue, bufferId=%zu, bitstreamId=%ld, bytesused=%zu, isLast=%d",
               bufferId, bitstreamId, bytesUsed, isLast);
 
         // Get the corresponding VideoFrame of the dequeued buffer.
@@ -693,7 +693,7 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         mFrameAtDevice.erase(it);
 
         if (bytesUsed > 0) {
-            ALOGV("Send output frame(bitstreamId=%d) to client", bitstreamId);
+            ALOGV("Send output frame(bitstreamId=%ld) to client", bitstreamId);
             frame->setBitstreamId(bitstreamId);
             frame->setVisibleRect(mVisibleRect);
             mOutputCb.Run(std::move(frame));
