@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_COMPONENTS_DECODE_INTERFACE_H
 #define ANDROID_V4L2_CODEC2_COMPONENTS_DECODE_INTERFACE_H
 
@@ -35,6 +39,9 @@ public:
     size_t getInputBufferSize() const;
     c2_status_t queryColorAspects(
             std::shared_ptr<C2StreamColorAspectsInfo::output>* targetColorAspects);
+
+    // Get the current value of output pixel format requested by client.
+   HalPixelFormat getOutputPixelFormat() const { return static_cast<HalPixelFormat> (mPixelFormat->value); }
 
 private:
     // Configurable parameter setters.
@@ -99,6 +106,8 @@ private:
     // former has higher priority. This parameter is used for component to provide color aspects
     // as C2Info in decoded output buffers.
     std::shared_ptr<C2StreamColorAspectsInfo::output> mColorAspects;
+    // The default requested output pixel format. This parameter should be configured by client.
+    std::shared_ptr<C2StreamPixelFormatInfo::output> mPixelFormat;
 
     c2_status_t mInitStatus;
     std::optional<VideoCodec> mVideoCodec;
