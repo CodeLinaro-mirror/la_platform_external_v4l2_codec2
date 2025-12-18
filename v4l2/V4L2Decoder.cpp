@@ -269,7 +269,14 @@ bool V4L2Decoder::setupInitialOutput() {
         return false;
     }
 
-    if (!startOutputQueue(1, V4L2_MEMORY_DMABUF)) {
+    v4l2_memory memtype;
+    if (property_get_bool("ro.vendor.v4l2_codec2.decoder.use_dmabuf_outputqueue", true)) {
+        memtype = V4L2_MEMORY_DMABUF;
+    } else {
+        memtype = V4L2_MEMORY_MMAP;
+    }
+
+    if (!startOutputQueue(1, memtype)) {
         ALOGE("Failed to start initialy output queue");
         return false;
     }
@@ -294,7 +301,14 @@ bool V4L2Decoder::setupInitialOutput() {
         fds.push_back(mInitialEosBuffer->handle->data[i]);
     }
 
-    if (!std::move(*eosBuffer).queueDMABuf(fds)) {
+    bool result;
+    if (eosBuffer->memory() == V4L2_MEMORY_MMAP) {
+        result = std::move(*eosBuffer).queueMMap();
+    } else {
+        result = std::move(*eosBuffer).queueDMABuf(fds);
+    }
+   
+    if (!result) {
         ALOGE("Failed to queue initial EOS buffer");
         return false;
     }
@@ -712,6 +726,15 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
         mFrameAtDevice.erase(it);
 
         if (bytesUsed > 0) {
+            if (dequeuedBuffer->memory() == V4L2_MEMORY_MMAP) {
+                C2GraphicView graphicView = frame->getGraphicView();
+                if (graphicView.error() != C2_OK) {
+                    ALOGE("%s(): Get graphic view err = %d", __func__, graphicView.error());
+                    onError();
+                    return;
+                }
+                memcpy(*graphicView.data(), dequeuedBuffer->getPlaneMapping(0), bytesUsed);
+            }
             ALOGV("Send output frame(bitstreamId=%ld) to client", bitstreamId);
             frame->setBitstreamId(bitstreamId);
             frame->setVisibleRect(mVisibleRect);
@@ -724,11 +747,19 @@ void V4L2Decoder::serviceDeviceTask(bool event) {
             auto outputBuffer = mOutputQueue->getFreeBuffer(bufferId);
             ALOG_ASSERT(outputBuffer, "V4L2 output queue slot %zu is not freed.", bufferId);
 
-            if (!std::move(*outputBuffer).queueDMABuf(frame->getFDs())) {
+            bool result;
+            if (outputBuffer->memory() == V4L2_MEMORY_MMAP) {
+                result = std::move(*outputBuffer).queueMMap();
+            } else {
+                result = std::move(*outputBuffer).queueDMABuf(frame->getFDs());
+            }
+
+            if (!result) {
                 ALOGE("%s(): Failed to recycle empty buffer to output queue.", __func__);
                 onError();
                 return;
             }
+
             mFrameAtDevice.insert(std::make_pair(bufferId, std::move(frame)));
         }
 
@@ -785,7 +816,14 @@ bool V4L2Decoder::changeResolution() {
         mInitialEosBuffer = nullptr;
     }
 
-    if (!startOutputQueue(mMinNumOutputBuffers, V4L2_MEMORY_DMABUF)) {
+    v4l2_memory memtype;
+    if (property_get_bool("ro.vendor.v4l2_codec2.decoder.use_dmabuf_outputqueue", true)) {
+        memtype = V4L2_MEMORY_DMABUF;
+    } else {
+        memtype = V4L2_MEMORY_MMAP;
+    }
+
+    if (!startOutputQueue(mMinNumOutputBuffers, memtype)) {
         ALOGE("Failed to start output queue during DRC.");
         return false;
     }
@@ -948,12 +986,20 @@ void V4L2Decoder::onVideoFrameReady(
     uint32_t v4l2Id = outputBuffer->bufferId();
     ALOGV("QBUF to output queue, blockId=%u, V4L2Id=%u", blockId, v4l2Id);
 
-    if (!std::move(*outputBuffer).queueDMABuf(frame->getFDs())) {
+    bool result;
+    if (outputBuffer->memory() == V4L2_MEMORY_MMAP) {
+        result = std::move(*outputBuffer).queueMMap();
+    } else {
+        result = std::move(*outputBuffer).queueDMABuf(frame->getFDs());
+    }
+
+    if (!result) {
         ALOGE("%s(): Failed to QBUF to output queue, blockId=%u, V4L2Id=%u", __func__, blockId,
               v4l2Id);
         onError();
         return;
     }
+
     if (mFrameAtDevice.find(v4l2Id) != mFrameAtDevice.end()) {
         ALOGE("%s(): V4L2 buffer %d already enqueued.", __func__, v4l2Id);
         onError();
