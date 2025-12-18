@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 #ifndef ANDROID_V4L2_CODEC2_COMPONENTS_ENCODE_INTERFACE_H
 #define ANDROID_V4L2_CODEC2_COMPONENTS_ENCODE_INTERFACE_H
 
@@ -54,6 +58,19 @@ public:
     // Request changing the framerate to the specified value.
     void setFramerate(uint32_t framerate) { mFrameRate->value = framerate; }
 
+    // This function is not used at the moment
+    std::shared_ptr<C2StreamColorAspectsInfo::output>& getCodedColorAspects() {
+        return mCodedColorAspects;
+    }
+
+    std::shared_ptr<C2StreamColorAspectsInfo::input>& getColorAspects() {
+        return mColorAspects;
+    }
+
+    // This function is not used at the moment
+    c2_status_t queryColorAspects(
+        std::shared_ptr<C2StreamColorAspectsInfo::input>& targetColorAspects);
+
 protected:
     void Initialize(const C2String& name, const SupportedCapabilities& caps);
 
@@ -71,6 +88,13 @@ protected:
 
     static C2R IntraRefreshPeriodSetter(bool mayBlock,
                                         C2P<C2StreamIntraRefreshTuning::output>& period);
+
+    static C2R ColorAspectsSetter(
+        bool /* mayBlock */, C2P<C2StreamColorAspectsInfo::input>& def);
+
+    static C2R CodedColorAspectsSetter(
+	    bool /* mayBlock */, C2P<C2StreamColorAspectsInfo::output>& merged,
+	    const C2P<C2StreamColorAspectsInfo::input>& coded);
 
     // Recorded lowest configured level
     // Is static for the need to use H264ProfileLevelSetter as a setter
@@ -121,6 +145,9 @@ protected:
     // The intra-frame refresh period. This is unused for the component now.
     // TODO: adapt intra refresh period to encoder.
     std::shared_ptr<C2StreamIntraRefreshTuning::output> mIntraRefreshPeriod;
+    // Color aspects
+    std::shared_ptr<C2StreamColorAspectsInfo::input> mColorAspects;
+    std::shared_ptr<C2StreamColorAspectsInfo::output> mCodedColorAspects;
 
     c2_status_t mInitStatus = C2_NO_INIT;
 };
