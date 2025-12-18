@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "DecodeInterface"
 
@@ -405,6 +409,20 @@ DecodeInterface::DecodeInterface(const std::string& name,
                                          mCodedColorAspects)
                              .build());
     }
+
+    
+    // Currently we support two output pixel formats:
+    // RGBX_8888 - default for this platform
+    // YCBCR_420_888 - required by Android testing tools - the RGB->YUV420 conversion is required
+    std::vector<uint32_t> pixelFormats = {static_cast<uint32_t> (HalPixelFormat::RGBX_8888), 
+                                         static_cast<uint32_t> (HalPixelFormat::YCBCR_420_888)};
+    addParameter(
+                DefineParam(mPixelFormat, C2_PARAMKEY_PIXEL_FORMAT)
+                .withDefault(new C2StreamPixelFormatInfo::output(
+                                0u, static_cast<uint32_t> (HalPixelFormat::RGBX_8888)))
+                .withFields({C2F(mPixelFormat, value).oneOf(pixelFormats)})
+                .withSetter((Setter<decltype(*mPixelFormat)>::StrictValueWithNoDeps))
+                .build());
 }
 
 size_t DecodeInterface::getInputBufferSize() const {
