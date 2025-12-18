@@ -47,6 +47,7 @@ public:
     static std::unique_ptr<VideoDecoder> Create(
             uint32_t debugStreamId, const VideoCodec& codec, const size_t inputBufferSize,
             const size_t minNumOutputBuffers, const HalPixelFormat outputPixelFormat,
+            const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects,
             GetPoolCB getPoolCB, OutputCB outputCb, ErrorCB errorCb, 
             scoped_refptr<::base::SequencedTaskRunner> taskRunner, bool isSecure);
     ~V4L2Decoder() override;
@@ -79,23 +80,29 @@ private:
     V4L2Decoder(uint32_t debugStreamId, scoped_refptr<::base::SequencedTaskRunner> taskRunner);
     bool start(const VideoCodec& codec, const size_t inputBufferSize,
                const size_t minNumOutputBuffers, const HalPixelFormat outputPixelFormat,
+               const std::shared_ptr<C2StreamColorAspectsInfo::output>& outputColorAspects,
                GetPoolCB getPoolCb, OutputCB outputCb, ErrorCB errorCb, bool isSecure);
-    bool setupInputFormat(const uint32_t inputPixelFormat, const size_t inputBufferSize);
+    bool setupInputFormat(const uint32_t inputPixelFormat, const size_t inputBufferSize,
+                          const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects);
 
     // Sets minimal resolution and allocates minimal amount of output buffers for
     // drain done signaling.
-    bool setupInitialOutput();
+    bool setupInitialOutput(
+        const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects);
     // Find the first output format and sets output to its minimal resolution.
-    bool setupMinimalOutputFormat();
+    bool setupMinimalOutputFormat(
+        const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects);
     // Allocates the at least |minOutputBuffersCount| of output buffers using set format
-    bool startOutputQueue(size_t minOutputBuffersCount, enum v4l2_memory memory);
+    bool startOutputQueue(size_t minOutputBuffersCount, enum v4l2_memory memory,
+        const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects);
 
     void pumpDecodeRequest();
 
     void serviceDeviceTask(bool event);
     bool dequeueResolutionChangeEvent();
     bool changeResolution();
-    bool setupOutputFormat(const ui::Size& size);
+    bool setupOutputFormat(const ui::Size& size,
+        const std::shared_ptr<C2StreamColorAspectsInfo::output>& colorAspects);
 
     void tryFetchVideoFrame();
     void onVideoFrameReady(std::optional<VideoFramePool::FrameWithBlockId> frameWithBlockId);
@@ -147,6 +154,7 @@ private:
     Rect mVisibleRect;
 
     HalPixelFormat mOutputPixelFormat;
+    std::shared_ptr<C2StreamColorAspectsInfo::output> mOutputColorAspects;
 
     // Currently enqueued frame at the deocder device, mapped using V4L2 buffer ID.
     std::map<size_t, std::unique_ptr<VideoFrame>> mFrameAtDevice;

@@ -228,7 +228,8 @@ public:
     // adjusted by the driver, so the caller must check their values.
     std::optional<struct v4l2_format> setFormat(uint32_t fourcc, const ui::Size& size,
                                                 size_t bufferSize,
-                                                uint32_t stride = 0) WARN_UNUSED_RESULT;
+                                                uint32_t stride = 0,
+                                                const C2ColorAspectsStruct *c2ColorAspects = nullptr) WARN_UNUSED_RESULT;
 
     // Identical to |setFormat|, but does not actually apply the format, and can be called anytime.
     // Returns an adjusted V4L2 format if |fourcc| is supported by the queue, or |nullopt| if
