@@ -2,6 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2ComponentStore"
 
@@ -38,23 +42,12 @@ std::shared_ptr<C2ComponentStore> V4L2ComponentStore::Create() {
 
     builder.encoder(V4L2ComponentName::kH264Encoder, VideoCodec::H264,
                     &V4L2ComponentFactory::create);
-    builder.encoder(V4L2ComponentName::kVP8Encoder, VideoCodec::VP8, &V4L2ComponentFactory::create);
-    builder.encoder(V4L2ComponentName::kVP9Encoder, VideoCodec::VP9, &V4L2ComponentFactory::create);
 
     builder.decoder(V4L2ComponentName::kH264Decoder, VideoCodec::H264,
                     &V4L2ComponentFactory::create);
     builder.decoder(V4L2ComponentName::kVP8Decoder, VideoCodec::VP8, &V4L2ComponentFactory::create);
     builder.decoder(V4L2ComponentName::kVP9Decoder, VideoCodec::VP9, &V4L2ComponentFactory::create);
     builder.decoder(V4L2ComponentName::kHEVCDecoder, VideoCodec::HEVC,
-                    &V4L2ComponentFactory::create);
-
-    builder.decoder(V4L2ComponentName::kH264SecureDecoder, VideoCodec::H264,
-                    &V4L2ComponentFactory::create);
-    builder.decoder(V4L2ComponentName::kVP8SecureDecoder, VideoCodec::VP8,
-                    &V4L2ComponentFactory::create);
-    builder.decoder(V4L2ComponentName::kVP9SecureDecoder, VideoCodec::VP9,
-                    &V4L2ComponentFactory::create);
-    builder.decoder(V4L2ComponentName::kHEVCSecureDecoder, VideoCodec::HEVC,
                     &V4L2ComponentFactory::create);
 
     store = std::shared_ptr<C2ComponentStore>(std::move(builder).build());
