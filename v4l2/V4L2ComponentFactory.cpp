@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Changes from Qualcomm Technologies, Inc. are provided under the following license:
+// Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+
 //#define LOG_NDEBUG 0
 #define LOG_TAG "V4L2ComponentFactory"
 
 #include <v4l2_codec2/v4l2/V4L2ComponentFactory.h>
-
-#include <codec2/hidl/1.0/InputBufferManager.h>
 #include <log/log.h>
 
 #include <v4l2_codec2/common/Common.h>
@@ -17,6 +19,8 @@
 #include <v4l2_codec2/v4l2/V4L2DecodeComponent.h>
 #include <v4l2_codec2/v4l2/V4L2Device.h>
 #include <v4l2_codec2/v4l2/V4L2EncodeComponent.h>
+
+#include <codec2/aidl/InputBufferManager.h>
 
 namespace android {
 
@@ -41,7 +45,7 @@ std::unique_ptr<V4L2ComponentFactory> V4L2ComponentFactory::create(
 V4L2ComponentFactory::V4L2ComponentFactory(const std::string& componentName, bool isEncoder,
                                            std::shared_ptr<C2ReflectorHelper> reflector)
       : mComponentName(componentName), mIsEncoder(isEncoder), mReflector(std::move(reflector)) {
-    using namespace ::android::hardware::media::c2::V1_0;
+    using namespace aidl::android::hardware::media::c2;
     // To minimize IPC, we generally want the codec2 framework to release and
     // recycle input buffers when the corresponding work item is done. However,
     // sometimes it is necessary to provide more input to unblock a decoder.
