@@ -1,0 +1,10 @@
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+
+service android-hardware-media-c2-v4l2-hal /vendor/bin/hw/android.hardware.media.c2-service-v4l2-64
+    class hal
+    user media
+    group mediadrm drmrpc
+    ioprio rt 4
+    task_profiles ProcessCapacityHigh
+    setenv MESA_GLSL_CACHE_DISABLE 1
