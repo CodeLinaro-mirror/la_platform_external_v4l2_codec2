@@ -40,6 +40,8 @@ std::optional<uint32_t> VideoFramePool::getBufferIdFromGraphicBlock(C2BlockPool&
     switch (blockPool.getAllocatorId()) {
     case V4L2AllocatorId::SECURE_GRAPHIC:
         FALLTHROUGH;
+    case C2PlatformAllocatorStore::IGBA:
+        FALLTHROUGH;
     case C2PlatformAllocatorStore::BUFFERQUEUE: {
         auto dmabufId = android::getDmabufId(block.handle()->data[0]);
         if (!dmabufId) {
